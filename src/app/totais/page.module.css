@@ -1,0 +1,67 @@
+.page {
+  min-height: 100dvh;
+  background: var(--bg-primary);
+  padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--space-lg));
+}
+
+.header {
+  padding: var(--space-lg) var(--space-md) 0;
+}
+
+.title {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+}
+
+.card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) var(--space-lg);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  border-left: 3px solid var(--card-color);
+  animation: slideUp var(--transition-slow) backwards;
+}
+
+.cardHighlight {
+  background: var(--bg-elevated);
+  border-width: 1px;
+  border-left-width: 4px;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.cardIcon {
+  font-size: var(--text-lg);
+}
+
+.cardLabel {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-secondary);
+}
+
+.cardValue {
+  font-size: var(--text-lg);
+  font-weight: var(--font-bold);
+  font-variant-numeric: tabular-nums;
+}

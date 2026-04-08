@@ -1,0 +1,113 @@
+.row {
+  display: grid;
+  grid-template-columns: 60px 1fr auto;
+  align-items: center;
+  padding: 10px var(--space-md);
+  border-bottom: 1px solid var(--border-secondary);
+  transition: background-color var(--transition-fast);
+  background: var(--row-bg);
+  min-height: 48px;
+}
+
+.row:hover {
+  filter: brightness(1.05);
+}
+
+.today {
+  background: var(--day-today) !important;
+  border-left: 3px solid var(--accent-primary);
+  font-weight: var(--font-semibold);
+}
+
+.past {
+  opacity: 0.95;
+}
+
+.dayCell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dayNumber {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  font-variant-numeric: tabular-nums;
+  min-width: 24px;
+  text-align: center;
+}
+
+.check {
+  color: var(--color-income);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.typeCell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 0 var(--space-sm);
+}
+
+.typeIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: var(--font-bold);
+  flex-shrink: 0;
+}
+
+.income {
+  background: rgba(0, 230, 118, 0.2);
+  color: var(--color-income);
+}
+
+.expense {
+  background: rgba(255, 82, 82, 0.2);
+  color: var(--color-expense);
+}
+
+.daily {
+  background: rgba(255, 152, 0, 0.2);
+  color: var(--color-daily);
+}
+
+.card {
+  background: rgba(171, 71, 188, 0.2);
+  color: var(--color-card);
+}
+
+.value {
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.zero {
+  color: var(--text-tertiary);
+}
+
+.forecast {
+  opacity: 0.7;
+}
+
+.balanceCell {
+  text-align: right;
+  padding-left: var(--space-sm);
+}
+
+.balance {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.negative {
+  color: var(--color-expense);
+}
