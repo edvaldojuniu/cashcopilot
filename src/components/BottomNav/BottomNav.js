@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
+import { useFinance } from '@/contexts/FinanceContext';
 import styles from './BottomNav.module.css';
 
 export default function BottomNav() {
