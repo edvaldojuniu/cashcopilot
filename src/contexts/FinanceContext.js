@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import { supabase } from '@/lib/supabase';
 import { useAuth } from './AuthContext';
 import { generateMonthForecast, calculateMonthlySummary } from '@/lib/engine';
+import QuickAddModal from '@/components/QuickAddModal/QuickAddModal';
 
 const FinanceContext = createContext({});
 
@@ -13,9 +14,14 @@ export function FinanceProvider({ children }) {
   const [incomeEntries, setIncomeEntries] = useState([]);
   const [fixedExpenses, setFixedExpenses] = useState([]);
   const [variableExpenses, setVariableExpenses] = useState([]);
+  const [cards, setCards] = useState([]);
   const [cardBills, setCardBills] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [verifiedDays, setVerifiedDays] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Global UI State
+  const [isQuickAddOpen, setQuickAddOpen] = useState(false);
 
   // Current view state
   const [viewMonth, setViewMonth] = useState(new Date().getMonth());
@@ -34,8 +40,10 @@ export function FinanceProvider({ children }) {
     setIncomeEntries([]);
     setFixedExpenses([]);
     setVariableExpenses([]);
+    setCards([]);
     setCardBills([]);
     setTransactions([]);
+    setVerifiedDays([]);
     setLoading(false);
   }
 
@@ -53,20 +61,24 @@ export function FinanceProvider({ children }) {
     }, 8000);
 
     try {
-      const [incomes, fixed, variable, cards, txns] = await Promise.all([
+      const [incomes, fixed, variable, dbCards, txns, checkedDays, billsRaw] = await Promise.all([
         supabase.from('income_entries').select('*').eq('user_id', user.id).order('due_day'),
         supabase.from('fixed_expenses').select('*').eq('user_id', user.id).order('due_day'),
         supabase.from('variable_expenses').select('*').eq('user_id', user.id).order('description'),
-        supabase.from('credit_card_bills').select('*').eq('user_id', user.id).order('due_day'),
+        supabase.from('cards').select('*').eq('user_id', user.id).order('name'),
         supabase.from('daily_transactions').select('*').eq('user_id', user.id).order('date'),
+        supabase.from('verified_days').select('*').eq('user_id', user.id),
+        supabase.from('credit_card_bills').select('*').eq('user_id', user.id).order('due_day')
       ]);
 
       if (isMounted) {
         setIncomeEntries(incomes.data || []);
         setFixedExpenses(fixed.data || []);
         setVariableExpenses(variable.data || []);
-        setCardBills(cards.data || []);
+        setCards(dbCards.data || []);
         setTransactions(txns.data || []);
+        setVerifiedDays(checkedDays.data || []);
+        setCardBills(billsRaw.data || []);
       }
     } catch (error) {
       console.error('Error fetching finance data:', error);
@@ -170,6 +182,36 @@ export function FinanceProvider({ children }) {
     return { error };
   }
 
+  async function addCard(entry) {
+    if (!supabase) return { error: 'Not configured' };
+    const { data, error } = await supabase
+      .from('cards')
+      .insert({ ...entry, user_id: user.id })
+      .select()
+      .single();
+    if (!error) setCards((prev) => [...prev, data]);
+    return { data, error };
+  }
+
+  async function updateCard(id, updates) {
+    if (!supabase) return { error: 'Not configured' };
+    const { data, error } = await supabase
+      .from('cards')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    if (!error) setCards((prev) => prev.map((e) => (e.id === id ? data : e)));
+    return { data, error };
+  }
+
+  async function deleteCard(id) {
+    if (!supabase) return { error: 'Not configured' };
+    const { error } = await supabase.from('cards').delete().eq('id', id);
+    if (!error) setCards((prev) => prev.filter((e) => e.id !== id));
+    return { error };
+  }
+
   async function addCardBill(entry) {
     if (!supabase) return { error: 'Not configured' };
     const { data, error } = await supabase
@@ -218,6 +260,26 @@ export function FinanceProvider({ children }) {
     return { error };
   }
 
+  async function toggleVerifiedDay(dateStr) {
+    if (!supabase) return { error: 'Not configured' };
+    
+    const existing = verifiedDays.find(d => d.date === dateStr);
+    
+    if (existing) {
+      const { error } = await supabase.from('verified_days').delete().eq('id', existing.id);
+      if (!error) setVerifiedDays(prev => prev.filter(d => d.id !== existing.id));
+      return { error, newState: false };
+    } else {
+      const { data, error } = await supabase
+        .from('verified_days')
+        .insert({ date: dateStr, user_id: user.id })
+        .select()
+        .single();
+      if (!error) setVerifiedDays(prev => [...prev, data]);
+      return { data, error, newState: true };
+    }
+  }
+
   // --- Forecast Calculation ---
 
   const getMonthForecast = useCallback(
@@ -247,7 +309,9 @@ export function FinanceProvider({ children }) {
           incomeEntries,
           fixedExpenses,
           variableExpenses,
+          cards,
           cardBills,
+          verifiedDays,
           transactions: monthTxns,
           showDailyForecast: profile.show_daily_forecast !== false,
           cycleStartDay: profile.cycle_start_day || 1,
@@ -268,7 +332,9 @@ export function FinanceProvider({ children }) {
         incomeEntries,
         fixedExpenses,
         variableExpenses,
+        cards,
         cardBills,
+        verifiedDays,
         transactions: monthTxns,
         showDailyForecast: profile.show_daily_forecast !== false,
         cycleStartDay: profile.cycle_start_day || 1,
@@ -278,7 +344,70 @@ export function FinanceProvider({ children }) {
 
       return { forecast, summary, initialBalance: balance };
     },
-    [profile, incomeEntries, fixedExpenses, variableExpenses, cardBills, transactions]
+    [profile, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays, transactions]
+  );
+
+  const getMultiMonthForecastFn = useCallback(
+    (startYear, startMonth, numMonths = 6) => {
+      // Find initial balance exactly like getMonthForecast
+      if (!profile) return [];
+      
+      const startOfHistoryYear = new Date().getFullYear();
+      let balance = Number(profile.initial_balance || 0);
+      const targetMonthIndex = (startYear - startOfHistoryYear) * 12 + startMonth;
+
+      for (let i = 0; i < targetMonthIndex; i++) {
+        let m = i % 12;
+        let y = startOfHistoryYear + Math.floor(i / 12);
+        
+        const monthTxns = transactions.filter((t) => {
+          const d = new Date(t.date);
+          return d.getFullYear() === y && d.getMonth() === m;
+        });
+
+        const forecast = generateMonthForecast({
+          year: y, month: m, initialBalance: balance,
+          incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays,
+          transactions: monthTxns,
+          showDailyForecast: profile.show_daily_forecast !== false,
+          cycleStartDay: profile.cycle_start_day || 1,
+        });
+
+        balance = forecast[forecast.length - 1]?.balance || 0;
+      }
+
+      // Now generate N months forward
+      const allMonths = [];
+      let currentBalance = balance;
+      for (let i = 0; i < numMonths; i++) {
+        let m = (startMonth + i) % 12;
+        let y = startYear + Math.floor((startMonth + i) / 12);
+
+        const monthTxns = transactions.filter((t) => {
+          const d = new Date(t.date);
+          return d.getFullYear() === y && d.getMonth() === m;
+        });
+
+        const forecast = generateMonthForecast({
+          year: y, month: m, initialBalance: currentBalance,
+          incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays,
+          transactions: monthTxns,
+          showDailyForecast: profile.show_daily_forecast !== false,
+          cycleStartDay: profile.cycle_start_day || 1,
+        });
+
+        const summary = calculateMonthlySummary(forecast);
+        
+        allMonths.push({
+          year: y, month: m, forecast, summary, initialBalance: currentBalance
+        });
+
+        currentBalance = forecast[forecast.length - 1]?.balance || 0;
+      }
+      
+      return allMonths;
+    },
+    [profile, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays, transactions]
   );
 
   // Navigation
@@ -305,26 +434,40 @@ export function FinanceProvider({ children }) {
     setViewYear(new Date().getFullYear());
   }
 
+  async function refetchVariableExpenses() {
+    if (!supabase) return;
+    const { data } = await supabase.from('variable_expenses').select('*').eq('user_id', user.id);
+    if (data) setVariableExpenses(data);
+  }
+
   const value = {
-    incomeEntries,
-    fixedExpenses,
-    variableExpenses,
-    cardBills,
-    transactions,
-    loading,
+    incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, transactions, verifiedDays, loading,
     addIncomeEntry, updateIncomeEntry, deleteIncomeEntry,
     addFixedExpense, updateFixedExpense, deleteFixedExpense,
     addVariableExpense, updateVariableExpense, deleteVariableExpense,
+    addCard, deleteCard,
     addCardBill, updateCardBill, deleteCardBill,
     addTransaction, deleteTransaction,
+    toggleVerifiedDay,
     getMonthForecast,
+    getMultiMonthForecast: getMultiMonthForecastFn,
+    isQuickAddOpen, setQuickAddOpen,
     viewMonth, viewYear,
     setViewMonth, setViewYear,
     goToNextMonth, goToPrevMonth, goToCurrentMonth,
-    refreshData: fetchAllData,
+    refetchVariableExpenses,
   };
 
-  return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;
+  return (
+    <FinanceContext.Provider value={value}>
+      {children}
+      <QuickAddModal 
+        isOpen={isQuickAddOpen} 
+        onClose={() => setQuickAddOpen(false)} 
+        initialType="diario" 
+      />
+    </FinanceContext.Provider>
+  );
 }
 
 export function useFinance() {

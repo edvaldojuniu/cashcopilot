@@ -125,9 +125,14 @@ export function AuthProvider({ children }) {
   }
 
   async function signOut() {
-    if (supabase) await supabase.auth.signOut();
-    setUser(null);
-    setProfile(null);
+    try {
+      if (supabase) await supabase.auth.signOut();
+    } catch(err) {
+      console.error('Error signing out', err);
+    } finally {
+      setUser(null);
+      setProfile(null);
+    }
   }
 
   const value = {

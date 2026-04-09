@@ -13,7 +13,7 @@ export default function MenuPage() {
 
   async function handleLogout() {
     await signOut();
-    router.push('/');
+    window.location.href = '/';
   }
 
   return (

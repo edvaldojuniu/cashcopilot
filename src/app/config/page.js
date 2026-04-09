@@ -46,6 +46,9 @@ export default function ConfigPage() {
           description: entry.description,
           amount: Number(entry.amount),
           due_day: Number(entry.due_day),
+          start_month: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
+          end_month: null,
+          is_active: true
         });
         break;
       case 'fixed':
@@ -53,6 +56,9 @@ export default function ConfigPage() {
           description: entry.description,
           amount: Number(entry.amount),
           due_day: Number(entry.due_day),
+          start_month: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
+          end_month: null, // by default let's make it infinite here
+          is_active: true
         });
         break;
       case 'variable':

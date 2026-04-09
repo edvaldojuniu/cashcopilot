@@ -15,29 +15,53 @@ export default function HomePage() {
   const {
     viewMonth, viewYear,
     goToNextMonth, goToPrevMonth, goToCurrentMonth,
-    getMonthForecast, loading: financeLoading,
+    getMonthForecast, getMultiMonthForecast, loading: financeLoading, toggleVerifiedDay
   } = useFinance();
 
   const [filter, setFilter] = useState('diarios');
   const todayRef = useRef(null);
 
+  const [windowWidth, setWindowWidth] = useState(0);
+
+  useEffect(() => {
+    setWindowWidth(window.innerWidth);
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const maxMonths = windowWidth >= 1024 ? 4 : 1;
+
   // Calculate forecast
-  const { forecast, summary } = useMemo(() => {
-    if (!isAuthenticated) return { forecast: [], summary: {} };
-    return getMonthForecast(viewYear, viewMonth);
-  }, [isAuthenticated, viewYear, viewMonth, getMonthForecast]);
+  const { monthsData, summary } = useMemo(() => {
+    if (!isAuthenticated || maxMonths === 0) return { monthsData: [], summary: {} };
+    if (maxMonths > 1) {
+      const ms = getMultiMonthForecast(viewYear, viewMonth, maxMonths);
+      return { monthsData: ms, summary: ms[0]?.summary || {} };
+    } else {
+      const mo = getMonthForecast(viewYear, viewMonth);
+      return { monthsData: [{ ...mo, year: viewYear, month: viewMonth }], summary: mo.summary };
+    }
+  }, [isAuthenticated, viewYear, viewMonth, maxMonths, getMonthForecast, getMultiMonthForecast]);
 
   // Get max balance for color calculations
   const maxBalance = useMemo(() => {
-    return Math.max(...forecast.map((d) => d.balance), 1);
-  }, [forecast]);
+    if (!monthsData.length) return 1;
+    let max = 1;
+    monthsData.forEach(m => {
+      m.forecast.forEach(d => {
+        if (d.balance > max) max = d.balance;
+      });
+    });
+    return max;
+  }, [monthsData]);
 
   // Scroll to today
   useEffect(() => {
     if (todayRef.current) {
       todayRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  }, [viewMonth, viewYear, forecast]);
+  }, [viewMonth, viewYear, monthsData]);
 
   // Loading state
   if (authLoading) {
@@ -60,6 +84,8 @@ export default function HomePage() {
     return <AuthScreen />;
   }
 
+  const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
   return (
     <div className={styles.page}>
       <MonthNavigator
@@ -79,7 +105,7 @@ export default function HomePage() {
               <div key={i} className={styles.skeleton} />
             ))}
           </div>
-        ) : forecast.length === 0 ? (
+        ) : monthsData.length === 0 || monthsData[0].forecast.length === 0 ? (
           <div className={styles.empty}>
             <div className={styles.emptyIcon}>
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -91,15 +117,27 @@ export default function HomePage() {
             <p>Vá em <strong>Config</strong> para adicionar entradas, saídas e gastos.</p>
           </div>
         ) : (
-          forecast.map((dayData) => (
-            <div key={dayData.day} ref={dayData.isToday ? todayRef : null}>
-              <DayRow
-                data={dayData}
-                maxBalance={maxBalance}
-                filter={filter}
-              />
-            </div>
-          ))
+          <div className={styles.monthColumns}>
+            {monthsData.map((mData, index) => (
+              <div key={`${mData.year}-${mData.month}`} className={styles.monthColumn}>
+                {maxMonths > 1 && (
+                  <div className={styles.monthHeader}>
+                    {monthNames[mData.month]} {mData.year}
+                  </div>
+                )}
+                {mData.forecast.map((dayData) => (
+                  <div key={dayData.dateStr || dayData.day} ref={dayData.isToday && index === 0 ? todayRef : null}>
+                    <DayRow
+                      data={dayData}
+                      maxBalance={maxBalance}
+                      filter={filter}
+                      onToggleVerify={() => toggleVerifiedDay(dayData.dateStr)}
+                    />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

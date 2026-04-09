@@ -3,10 +3,10 @@
 import styles from './FilterSelector.module.css';
 
 const FILTERS = [
-  { key: 'diarios', label: 'Diários', icon: 'D', color: 'var(--color-daily)' },
-  { key: 'entradas', label: 'Entradas', icon: 'E', color: 'var(--color-income)' },
-  { key: 'saidas', label: 'Saídas', icon: 'S', color: 'var(--color-expense)' },
-  { key: 'todos', label: 'Todos', icon: '⊞', color: 'var(--accent-primary)' },
+  { key: 'diarios', label: 'Diário', icon: 'D', color: 'var(--color-daily)' },
+  { key: 'diarios_cartoes', label: '+Cartões', icon: 'C', color: 'var(--color-card)' },
+  { key: 'gastos_reais', label: '+Saídas', icon: 'S', color: 'var(--color-expense)' },
+  { key: 'todos', label: 'Tudo', icon: '⊞', color: 'var(--accent-primary)' },
 ];
 
 export default function FilterSelector({ value, onChange }) {

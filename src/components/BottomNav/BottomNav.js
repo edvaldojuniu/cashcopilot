@@ -7,6 +7,8 @@ import styles from './BottomNav.module.css';
 export default function BottomNav() {
   const pathname = usePathname();
 
+  const { setQuickAddOpen } = useFinance();
+
   const navItems = [
     {
       href: '/',
@@ -32,8 +34,8 @@ export default function BottomNav() {
       ),
     },
     {
-      href: '#add',
-      label: '',
+      href: '#',
+      label: 'Novo',
       isAdd: true,
       icon: (
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -73,9 +75,14 @@ export default function BottomNav() {
 
           if (item.isAdd) {
             return (
-              <Link key="add" href="/adicionar" className={styles.addButton} id="btn-add-expense">
+              <button 
+                key="add" 
+                onClick={() => setQuickAddOpen(true)} 
+                className={styles.addButton} 
+                id="btn-add-expense"
+              >
                 <span className={styles.addIcon}>{item.icon}</span>
-              </Link>
+              </button>
             );
           }
 

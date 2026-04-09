@@ -28,7 +28,9 @@
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .dayList {
@@ -48,8 +50,13 @@
 }
 
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .empty {
@@ -114,4 +121,53 @@
   font-size: var(--text-base);
   font-weight: var(--font-bold);
   font-variant-numeric: tabular-nums;
+}
+
+/* Multi-month panoromic layout for desktop */
+.monthColumns {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.monthColumn {
+  width: 100%;
+}
+
+.monthHeader {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .page {
+    /* override padding since container handles it */
+  }
+
+  .monthColumns {
+    flex-direction: row;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    gap: var(--space-lg);
+    padding: 0 var(--space-md);
+    align-items: flex-start;
+  }
+
+  .monthColumn {
+    flex: 0 0 420px;
+    max-width: 420px;
+    scroll-snap-align: start;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+
+  .monthHeader {
+    display: block;
+    padding: var(--space-md);
+    text-align: center;
+    font-weight: var(--font-bold);
+    background: var(--bg-surface-hover);
+    border-bottom: 1px solid var(--border-primary);
+  }
 }

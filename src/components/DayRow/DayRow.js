@@ -3,8 +3,8 @@
 import styles from './DayRow.module.css';
 import { formatCurrency, getBalanceRowBg } from '@/lib/utils';
 
-export default function DayRow({ data, maxBalance, filter }) {
-  const { day, isPast, isToday, isFuture, totalIncome, totalExpense, dailyAmount, balance, incomes, expenses } = data;
+export default function DayRow({ data, maxBalance, filter, onToggleVerify }) {
+  const { day, isPast, isToday, isFuture, isVerified, totalIncome, totalExpense, totalCard, totalFixed, dailyAmount, balance } = data;
 
   // Determine what to show based on filter
   let displayValue = null;
@@ -20,19 +20,28 @@ export default function DayRow({ data, maxBalance, filter }) {
       displayType = 'daily';
       typeIcon = <span className={`${styles.typeIcon} ${styles.daily}`}>D</span>;
       break;
+    case 'diarios_cartoes':
+      displayValue = dailyAmount + totalCard;
+      displayType = 'card';
+      typeIcon = <span className={`${styles.typeIcon} ${styles.card}`}>V</span>; // V de Variáveis
+      break;
+    case 'gastos_reais': // Diários + Cartões + Saídas
+      displayValue = dailyAmount + totalExpense; // totalExpense já tem Cartões e Fixas!
+      displayType = 'expense';
+      typeIcon = <span className={`${styles.typeIcon} ${styles.expense}`}>S</span>;
+      break;
     case 'entradas':
       displayValue = totalIncome;
       displayType = 'income';
       typeIcon = totalIncome > 0 ? <span className={`${styles.typeIcon} ${styles.income}`}>E</span> : null;
       break;
     case 'saidas':
-      displayValue = totalExpense;
+      displayValue = totalFixed; // Mostra apenas as fixas (sem cartões, pois cartão já tem filtro)
       displayType = 'expense';
-      typeIcon = totalExpense > 0 ? <span className={`${styles.typeIcon} ${styles.expense}`}>S</span> : null;
+      typeIcon = totalFixed > 0 ? <span className={`${styles.typeIcon} ${styles.expense}`}>F</span> : null;
       break;
     case 'todos':
     default:
-      // Show the most relevant value for the day
       if (totalIncome > 0) {
         displayValue = totalIncome;
         displayType = 'income';
@@ -64,11 +73,15 @@ export default function DayRow({ data, maxBalance, filter }) {
       style={{ '--row-bg': rowBg }}
       id={`day-row-${day}`}
     >
-      {/* Day number */}
-      <div className={styles.dayCell}>
+      {/* Day number with manual toggle */}
+      <div 
+        className={styles.dayCell} 
+        onClick={onToggleVerify ? onToggleVerify : undefined}
+        style={{ cursor: onToggleVerify ? 'pointer' : 'default' }}
+      >
         <span className={styles.dayNumber}>{day}</span>
-        {isPast && (
-          <svg className={styles.check} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+        {isVerified && (
+          <svg className={styles.check} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-income)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="20 6 9 17 4 12" />
           </svg>
         )}
