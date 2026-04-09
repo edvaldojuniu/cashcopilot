@@ -75,6 +75,8 @@ export default function ConfigPage() {
 
     if (!result?.error) {
       setFormData({});
+    } else {
+      alert("Erro ao salvar: " + (result.error.message || "Verifique se você rodou o script de configuração no Supabase."));
     }
   }
 

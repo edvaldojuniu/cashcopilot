@@ -1,13 +1,20 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '../providers';
 import BottomNav from '@/components/BottomNav/BottomNav';
 import styles from './page.module.css';
 
 export default function MenuPage() {
+  const router = useRouter();
   const { user, profile, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
+
+  async function handleLogout() {
+    await signOut();
+    router.push('/');
+  }
 
   return (
     <div className={styles.page}>
@@ -52,7 +59,7 @@ export default function MenuPage() {
         </div>
 
         {/* Logout */}
-        <button className={`btn btn-danger btn-full ${styles.logoutBtn}`} onClick={signOut} id="btn-logout">
+        <button className={`btn btn-danger btn-full ${styles.logoutBtn}`} onClick={handleLogout} id="btn-logout">
           Sair da Conta
         </button>
       </div>

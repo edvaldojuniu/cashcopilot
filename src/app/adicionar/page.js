@@ -37,6 +37,8 @@ export default function AdicionarPage() {
     setLoading(false);
     if (!error) {
       router.push('/');
+    } else {
+      alert("Erro ao salvar: " + (error.message || "Verifique se você rodou o script de configuração no Supabase."));
     }
   }
 
