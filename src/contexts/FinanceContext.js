@@ -42,6 +42,16 @@ export function FinanceProvider({ children }) {
   async function fetchAllData() {
     if (!supabase || !user) return;
     setLoading(true);
+    let isMounted = true;
+    
+    // Safety timeout: 8 seconds maximum
+    const fallbackTimeout = setTimeout(() => {
+      if (isMounted) {
+        console.error("Timeout do banco de dados excedido (8s)");
+        setLoading(false);
+      }
+    }, 8000);
+
     try {
       const [incomes, fixed, variable, cards, txns] = await Promise.all([
         supabase.from('income_entries').select('*').eq('user_id', user.id).order('due_day'),
@@ -51,15 +61,20 @@ export function FinanceProvider({ children }) {
         supabase.from('daily_transactions').select('*').eq('user_id', user.id).order('date'),
       ]);
 
-      setIncomeEntries(incomes.data || []);
-      setFixedExpenses(fixed.data || []);
-      setVariableExpenses(variable.data || []);
-      setCardBills(cards.data || []);
-      setTransactions(txns.data || []);
+      if (isMounted) {
+        setIncomeEntries(incomes.data || []);
+        setFixedExpenses(fixed.data || []);
+        setVariableExpenses(variable.data || []);
+        setCardBills(cards.data || []);
+        setTransactions(txns.data || []);
+      }
     } catch (error) {
       console.error('Error fetching finance data:', error);
     } finally {
-      setLoading(false);
+      if (isMounted) {
+        setLoading(false);
+        clearTimeout(fallbackTimeout);
+      }
     }
   }
 
