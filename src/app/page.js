@@ -142,7 +142,7 @@ export default function HomePage() {
       </div>
 
       {/* Summary bar */}
-      {forecast.length > 0 && (
+      {monthsData.length > 0 && (
         <div className={styles.summaryBar} id="summary-bar">
           <div className={styles.summaryItem}>
             <span className={styles.summaryLabel}>Performance</span>
