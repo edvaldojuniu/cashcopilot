@@ -1,12 +1,12 @@
 .row {
   display: grid;
-  grid-template-columns: 60px 1fr auto;
+  grid-template-columns: 52px 1fr auto;
   align-items: center;
-  padding: 10px var(--space-md);
+  padding: 5px var(--space-sm);
   border-bottom: 1px solid var(--border-secondary);
   transition: background-color var(--transition-fast);
   background: var(--row-bg);
-  min-height: 48px;
+  min-height: 38px;
 }
 
 .row:hover {

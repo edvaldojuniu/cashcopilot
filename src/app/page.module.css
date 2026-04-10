@@ -1,7 +1,8 @@
+/* ── Mobile-first base ── */
 .page {
   min-height: 100dvh;
   background: var(--bg-secondary);
-  padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 60px);
+  padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 8px);
   overflow-y: auto;
 }
 
@@ -29,21 +30,18 @@
 }
 
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
 
-.dayList {
-  overflow: visible;
-}
+/* Mobile: dayList is just normal flow - page itself scrolls */
+.dayList {}
 
 .loadingDays {
   padding: var(--space-sm) 0;
 }
 
 .skeleton {
-  height: 48px;
+  height: 38px;
   margin: 1px 0;
   background: linear-gradient(90deg, var(--bg-surface) 25%, var(--bg-surface-hover) 50%, var(--bg-surface) 75%);
   background-size: 200% 100%;
@@ -51,13 +49,8 @@
 }
 
 @keyframes shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-
-  100% {
-    background-position: -200% 0;
-  }
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .empty {
@@ -69,7 +62,6 @@
   padding: var(--space-2xl) var(--space-lg);
   gap: var(--space-md);
   color: var(--text-secondary);
-  animation: fadeIn var(--transition-slow);
 }
 
 .emptyIcon {
@@ -89,42 +81,7 @@
   line-height: 1.6;
 }
 
-.summaryBar {
-  position: fixed;
-  bottom: calc(var(--nav-height) + var(--safe-bottom));
-  left: 0;
-  right: 0;
-  background: var(--glass);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-top: 1px solid var(--glass-border);
-  padding: var(--space-sm) var(--space-md);
-  display: flex;
-  justify-content: center;
-  z-index: var(--z-sticky);
-}
-
-.summaryItem {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-}
-
-.summaryLabel {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-weight: var(--font-medium);
-}
-
-.summaryValue {
-  font-size: var(--text-base);
-  font-weight: var(--font-bold);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Multi-month panoromic layout for desktop */
+/* Mobile: single column stacks naturally */
 .monthColumns {
   display: flex;
   flex-direction: column;
@@ -135,18 +92,19 @@
   width: 100%;
 }
 
-.monthHeader {
-  display: none;
-}
-
-/* Mobile: columnBody just stacks normally */
 .columnBody {
   display: block;
 }
 
+.monthHeader {
+  display: none;
+}
+
+
+/* ── Desktop panoramic layout (≥1024px) ── */
 @media (min-width: 1024px) {
+  /* Lock page to viewport height, flex column */
   .page {
-    /* On desktop switch to full flex-column so children can fill remaining height */
     height: 100dvh;
     display: flex;
     flex-direction: column;
@@ -154,40 +112,45 @@
     padding-bottom: 0;
   }
 
+  /* dayList fills leftover height and hides its own overflow */
   .dayList {
     flex: 1;
     min-height: 0;
     overflow: hidden;
   }
 
+  /* Outer container: scroll HORIZONTALLY between month cards */
   .monthColumns {
     flex-direction: row;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    gap: var(--space-lg);
-    padding: 0 var(--space-md) 0 var(--space-md);
-    align-items: stretch;
     height: 100%;
-    scrollbar-width: auto;
+    align-items: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: var(--space-md);
+    /* bottom padding gives room for the horizontal scrollbar */
+    padding: var(--space-sm) var(--space-md) 14px;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: auto;  /* keep it visible */
   }
 
   .monthColumns::-webkit-scrollbar {
-    height: 12px;
-  }
-  
-  .monthColumns::-webkit-scrollbar-track {
-    background: var(--bg-surface);
-    border-radius: 8px;
-  }
-  
-  .monthColumns::-webkit-scrollbar-thumb {
-    background-color: var(--border-primary);
-    border-radius: 8px;
+    height: 8px;
   }
 
+  .monthColumns::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+    border-radius: 6px;
+  }
+
+  .monthColumns::-webkit-scrollbar-thumb {
+    background: var(--border-primary);
+    border-radius: 6px;
+  }
+
+  /* Each month card - DOES NOT scroll, just clips */
   .monthColumn {
-    flex: 0 0 420px;
-    max-width: 420px;
+    flex: 0 0 340px;
+    max-width: 340px;
     height: 100%;
     display: flex;
     flex-direction: column;
@@ -198,35 +161,37 @@
     overflow: hidden;
   }
 
-  /* The columnBody is what scrolls vertically inside each month card */
-  .columnBody {
-    flex: 1;
-    overflow-y: auto;
-    min-height: 0;
-    scrollbar-width: thin;
-  }
-
-  .columnBody::-webkit-scrollbar {
-    width: 4px;
-  }
-
-  .columnBody::-webkit-scrollbar-thumb {
-    background: var(--border-primary);
-    border-radius: 4px;
-  }
-
+  /* Sticky month title inside each card */
   .monthHeader {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: var(--space-sm);
+    flex-shrink: 0;
+    padding: 5px var(--space-sm);
     background: var(--bg-surface-hover);
+    font-size: var(--text-sm);
     font-weight: var(--font-bold);
     color: var(--text-primary);
     border-bottom: 1px solid var(--border-primary);
     text-transform: capitalize;
-    position: sticky;
-    top: 0;
-    z-index: 10;
+  }
+
+  /* columnBody scrolls VERTICALLY — this is the key */
+  .columnBody {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    /* extra bottom padding so last row clears the BottomNav */
+    padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 4px);
+    scrollbar-width: thin;
+  }
+
+  .columnBody::-webkit-scrollbar {
+    width: 3px;
+  }
+
+  .columnBody::-webkit-scrollbar-thumb {
+    background: var(--border-primary);
+    border-radius: 3px;
   }
 }

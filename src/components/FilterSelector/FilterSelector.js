@@ -1,22 +1,24 @@
 'use client';
 
 import styles from './FilterSelector.module.css';
+import { formatCurrency } from '@/lib/utils';
 
 const FILTERS = [
-  { key: 'entradas', label: 'Entradas', icon: 'E', color: 'var(--color-income)' },
-  { key: 'saidas', label: 'Saídas', icon: 'S', color: 'var(--color-expense)' },
-  { key: 'diarios', label: 'Diários', icon: 'D', color: 'var(--color-daily)' },
-  { key: 'economias', label: 'Economias', icon: 'Ec', color: 'var(--color-income)' },
-  { key: 'cartoes', label: 'Gastos com cartão', icon: 'C', color: 'var(--color-card)' },
-  { key: 'diarios_cartoes', label: 'Diários + Cartão', icon: 'D+C', color: 'var(--color-card)' },
-  { key: 'despesas_totais', label: 'Diário + Cartão + Saídas', icon: 'DC+S', color: 'var(--color-expense)' },
-  { key: 'todas', label: 'Todas', icon: '⊞', color: 'var(--accent-primary)' },
+  { key: 'entradas', label: 'Entradas', color: 'var(--color-income)' },
+  { key: 'saidas', label: 'Saídas', color: 'var(--color-expense)' },
+  { key: 'diarios', label: 'Diários', color: 'var(--color-daily)' },
+  { key: 'economias', label: 'Economias', color: 'var(--color-income)' },
+  { key: 'cartoes', label: 'Cartão', color: 'var(--color-card)' },
+  { key: 'diarios_cartoes', label: 'Diário+Cartão', color: 'var(--color-card)' },
+  { key: 'despesas_totais', label: 'D+C+Saídas', color: 'var(--color-expense)' },
+  { key: 'todas', label: 'Todas', color: 'var(--accent-primary)' },
 ];
 
-export default function FilterSelector({ value, onChange }) {
+export default function FilterSelector({ value, onChange, performance }) {
+  const isPositive = (performance || 0) >= 0;
   return (
     <div className={styles.container} id="filter-selector">
-      <div className={styles.header}>
+      <div className={styles.row}>
         <div className={styles.filtersWrapper}>
           <div className={styles.filters}>
             {FILTERS.map((filter) => (
@@ -32,7 +34,17 @@ export default function FilterSelector({ value, onChange }) {
             ))}
           </div>
         </div>
+        {performance !== undefined && (
+          <div className={styles.performanceChip} style={{ color: isPositive ? 'var(--color-income)' : 'var(--color-expense)' }}>
+            <span className={styles.perfLabel}>Perf.</span>
+            <span className={styles.perfValue}>
+              {isPositive ? '+' : ''}
+              {formatCurrency(performance || 0)}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+

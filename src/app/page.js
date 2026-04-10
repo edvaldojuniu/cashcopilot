@@ -98,7 +98,7 @@ export default function HomePage() {
         onToday={goToCurrentMonth}
       />
 
-      <FilterSelector value={filter} onChange={setFilter} />
+      <FilterSelector value={filter} onChange={setFilter} performance={summary.performance} />
 
       <div className={styles.dayList} id="day-list">
         {financeLoading ? (
@@ -157,24 +157,6 @@ export default function HomePage() {
         dayData={selectedDay} 
       />
 
-      {/* Summary bar */}
-      {monthsData.length > 0 && (
-        <div className={styles.summaryBar} id="summary-bar">
-          <div className={styles.summaryItem}>
-            <span className={styles.summaryLabel}>Performance</span>
-            <span
-              className={styles.summaryValue}
-              style={{ color: summary.performance >= 0 ? 'var(--color-income)' : 'var(--color-expense)' }}
-            >
-              {summary.performance >= 0 ? '+' : ''}
-              {Number(summary.performance || 0).toLocaleString('pt-BR', {
-                style: 'currency',
-                currency: 'BRL',
-              })}
-            </span>
-          </div>
-        </div>
-      )}
 
       <BottomNav />
     </div>
