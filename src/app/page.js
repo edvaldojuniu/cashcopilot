@@ -127,23 +127,24 @@ export default function HomePage() {
                     {monthNames[mData.month]} {mData.year}
                   </div>
                 )}
-                {mData.forecast.map((dayData) => (
-                  <div key={dayData.dateStr || dayData.day} ref={dayData.isToday && index === 0 ? todayRef : null}>
-                    <div onClick={(e) => {
-                      // Avoid toggling modal if clicking exactly on the verify check
-                      if (!e.target.closest('circle') && !e.target.closest('svg')) {
-                         setSelectedDay(dayData);
-                      }
-                    }}>
-                      <DayRow
-                        data={dayData}
-                        maxBalance={maxBalance}
-                        filter={filter}
-                        onToggleVerify={() => toggleVerifiedDay(dayData.dateStr)}
-                      />
+                <div className={styles.columnBody}>
+                  {mData.forecast.map((dayData) => (
+                    <div key={dayData.dateStr || dayData.day} ref={dayData.isToday && index === 0 ? todayRef : null}>
+                      <div onClick={(e) => {
+                        if (!e.target.closest('circle') && !e.target.closest('svg')) {
+                           setSelectedDay(dayData);
+                        }
+                      }}>
+                        <DayRow
+                          data={dayData}
+                          maxBalance={maxBalance}
+                          filter={filter}
+                          onToggleVerify={() => toggleVerifiedDay(dayData.dateStr)}
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             ))}
           </div>

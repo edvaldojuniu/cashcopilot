@@ -1,10 +1,8 @@
 .page {
-  height: 100dvh;
-  display: flex;
-  flex-direction: column;
+  min-height: 100dvh;
   background: var(--bg-secondary);
-  padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 56px);
-  overflow: hidden;
+  padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 60px);
+  overflow-y: auto;
 }
 
 .loadingScreen {
@@ -37,9 +35,7 @@
 }
 
 .dayList {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .loadingDays {
@@ -143,13 +139,25 @@
   display: none;
 }
 
+/* Mobile: columnBody just stacks normally */
+.columnBody {
+  display: block;
+}
+
 @media (min-width: 1024px) {
   .page {
-    /* Rely on the base flex layout to handle height mapping */
+    /* On desktop switch to full flex-column so children can fill remaining height */
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: 0;
   }
-  
+
   .dayList {
-    overflow: hidden; /* We handle vertical scrolling inside the columns now */
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .monthColumns {
@@ -157,10 +165,10 @@
     overflow-x: auto;
     scroll-snap-type: x mandatory;
     gap: var(--space-lg);
-    padding: 0 var(--space-md) 24px var(--space-md); /* extra space for bottom scrollbar */
-    align-items: flex-start;
+    padding: 0 var(--space-md) 0 var(--space-md);
+    align-items: stretch;
     height: 100%;
-    scrollbar-width: auto; /* ensure scrollbar is visible */
+    scrollbar-width: auto;
   }
 
   .monthColumns::-webkit-scrollbar {
@@ -190,14 +198,21 @@
     overflow: hidden;
   }
 
-  .monthColumn > :last-child {
+  /* The columnBody is what scrolls vertically inside each month card */
+  .columnBody {
     flex: 1;
     overflow-y: auto;
-    scrollbar-width: none;
+    min-height: 0;
+    scrollbar-width: thin;
   }
 
-  .monthColumn > :last-child::-webkit-scrollbar {
-    display: none;
+  .columnBody::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .columnBody::-webkit-scrollbar-thumb {
+    background: var(--border-primary);
+    border-radius: 4px;
   }
 
   .monthHeader {
