@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
-const AuthContext = createContext({});
+const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -28,7 +28,7 @@ export function AuthProvider({ children }) {
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (!isMounted) return;
       if (error) console.error("getSession error:", error);
-      
+
       setUser(session?.user || null);
       if (session?.user) {
         fetchProfile(session.user.id);
@@ -127,7 +127,7 @@ export function AuthProvider({ children }) {
   async function signOut() {
     try {
       if (supabase) await supabase.auth.signOut();
-    } catch(err) {
+    } catch (err) {
       console.error('Error signing out', err);
     } finally {
       setUser(null);

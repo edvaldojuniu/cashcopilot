@@ -9,11 +9,13 @@ import styles from './page.module.css';
 export default function MenuPage() {
   const router = useRouter();
   const { user, profile, signOut } = useAuth();
+  console.log('signOut type:', typeof signOut);
   const { theme, toggleTheme } = useTheme();
 
   async function handleLogout() {
     await signOut();
-    window.location.href = '/';
+    router.push('/');
+    router.refresh();
   }
 
   return (
