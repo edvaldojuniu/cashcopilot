@@ -8,6 +8,7 @@ import BottomNav from '@/components/BottomNav/BottomNav';
 import MonthNavigator from '@/components/MonthNavigator/MonthNavigator';
 import FilterSelector from '@/components/FilterSelector/FilterSelector';
 import DayRow from '@/components/DayRow/DayRow';
+import DayDetailsModal from '@/components/DayDetailsModal/DayDetailsModal';
 import styles from './page.module.css';
 
 export default function HomePage() {
@@ -19,6 +20,7 @@ export default function HomePage() {
   } = useFinance();
 
   const [filter, setFilter] = useState('diarios');
+  const [selectedDay, setSelectedDay] = useState(null);
   const todayRef = useRef(null);
 
   const [windowWidth, setWindowWidth] = useState(0);
@@ -127,12 +129,19 @@ export default function HomePage() {
                 )}
                 {mData.forecast.map((dayData) => (
                   <div key={dayData.dateStr || dayData.day} ref={dayData.isToday && index === 0 ? todayRef : null}>
-                    <DayRow
-                      data={dayData}
-                      maxBalance={maxBalance}
-                      filter={filter}
-                      onToggleVerify={() => toggleVerifiedDay(dayData.dateStr)}
-                    />
+                    <div onClick={(e) => {
+                      // Avoid toggling modal if clicking exactly on the verify check
+                      if (!e.target.closest('circle') && !e.target.closest('svg')) {
+                         setSelectedDay(dayData);
+                      }
+                    }}>
+                      <DayRow
+                        data={dayData}
+                        maxBalance={maxBalance}
+                        filter={filter}
+                        onToggleVerify={() => toggleVerifiedDay(dayData.dateStr)}
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -140,6 +149,12 @@ export default function HomePage() {
           </div>
         )}
       </div>
+
+      <DayDetailsModal 
+        isOpen={!!selectedDay} 
+        onClose={() => setSelectedDay(null)} 
+        dayData={selectedDay} 
+      />
 
       {/* Summary bar */}
       {monthsData.length > 0 && (

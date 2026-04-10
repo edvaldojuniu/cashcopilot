@@ -65,3 +65,111 @@
   font-weight: var(--font-bold);
   font-variant-numeric: tabular-nums;
 }
+
+.cardSubtitle {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+.logsSection {
+  padding: 0 var(--space-md) var(--space-xl);
+  margin-top: var(--space-md);
+}
+
+.logsTitle {
+  font-size: var(--text-lg);
+  font-weight: var(--font-bold);
+  margin-bottom: var(--space-md);
+  color: var(--text-primary);
+}
+
+.tabsWrapper {
+  margin-bottom: var(--space-md);
+  margin-left: calc(var(--space-md) * -1);
+  margin-right: calc(var(--space-md) * -1);
+  padding: 0 var(--space-md);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabsWrapper::-webkit-scrollbar {
+  display: none;
+}
+
+.tabsScroll {
+  display: flex;
+  gap: 8px;
+  width: max-content;
+}
+
+.tabBtn {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  font-weight: var(--font-medium);
+  transition: all var(--transition-fast);
+}
+
+.activeTab {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  border-color: var(--text-primary);
+}
+
+.logsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.emptyLogs {
+  text-align: center;
+  padding: var(--space-lg);
+  color: var(--text-tertiary);
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+.logItem {
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  border-left: 3px solid var(--border-primary);
+}
+
+.logDate {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-weight: var(--font-medium);
+}
+
+.logMain {
+  flex: 1;
+}
+
+.logDesc {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  font-weight: var(--font-medium);
+}
+
+.logTypeTag {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+.logAmount {
+  font-size: var(--text-base);
+  font-weight: var(--font-bold);
+  font-variant-numeric: tabular-nums;
+}

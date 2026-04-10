@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import styles from './QuickAddModal.module.css';
 import { useFinance } from '@/contexts/FinanceContext';
 
-export default function QuickAddModal({ isOpen, onClose, initialType = 'diario', editData = null }) {
+export default function QuickAddModal({ isOpen, onClose, initialType = 'diario', editData = null, defaultDate = null }) {
   const {
     addTransaction, addFixedExpense, addIncomeEntry, addCardBill,
     updateTransaction, updateFixedExpense, updateIncomeEntry, updateCardBill,
@@ -14,7 +14,7 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
   const [type, setType] = useState(initialType);
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(defaultDate || new Date().toISOString().split('T')[0]);
   const [dueDay, setDueDay] = useState(new Date().getDate());
   
   const [cardId, setCardId] = useState('');
@@ -47,14 +47,14 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
         setType(initialType);
         setDescription('');
         setAmount('');
-        setDate(new Date().toISOString().split('T')[0]);
-        setDueDay(new Date().getDate());
+        setDate(defaultDate || new Date().toISOString().split('T')[0]);
+        setDueDay(defaultDate ? parseInt(defaultDate.split('-')[2]) : new Date().getDate());
         setRecurrence('unica');
         setInstallments(1);
         if (cards.length > 0) setCardId(cards[0].id);
       }
     }
-  }, [isOpen, initialType, editData, cards]);
+  }, [isOpen, initialType, editData, cards, defaultDate]);
 
   if (!isOpen) return null;
 
@@ -65,12 +65,12 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
     const val = parseFloat(amount.replace(',', '.'));
     
     try {
-      if (type === 'diario') {
+      if (type === 'diario' || type === 'saving') {
          await addTransaction({
             description,
             amount: val,
             date,
-            type: 'daily'
+            type: type === 'saving' ? 'saving' : 'daily'
          });
       }
       else if (type === 'expense' || type === 'income') {
@@ -160,6 +160,7 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
             <label>Tipo</label>
             <select value={type} onChange={e => setType(e.target.value)} disabled={!!editData}>
               <option value="diario">Gasto no Dia-a-Dia</option>
+              <option value="saving">Economia (Retirada)</option>
               <option value="card">Gasto no Cartão de Crédito</option>
               <option value="expense">Saída Fixa (Mês a Mês)</option>
               <option value="income">Entrada (Dinheiro novo)</option>
@@ -176,7 +177,7 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
             <input type="text" required value={description} onChange={e => setDescription(e.target.value)} placeholder="Ex: Mercado, Uber, Salário..." />
           </div>
 
-          {(type === 'diario' || (type === 'card' && recurrence === 'unica')) && (
+          {(type === 'diario' || type === 'saving' || (type === 'card' && recurrence === 'unica')) && (
             <div className={styles.formGroup}>
               <label>Data</label>
               <input type="date" required value={date} onChange={e => setDate(e.target.value)} />
