@@ -4,9 +4,10 @@ import styles from './DayRow.module.css';
 import { formatCurrency, getBalanceRowBg } from '@/lib/utils';
 
 export default function DayRow({ data, maxBalance, filter, onToggleVerify }) {
-  const { day, isPast, isToday, isFuture, isVerified, totalIncome, totalExpense, totalCard, totalFixed, dailyAmount, totalSavings = 0, balance } = data;
+  const { day, isPast, isToday, isFuture, isVerified, totalIncome, totalExpense, totalCard, totalFixed, dailyAmount, totalSavings = 0, balance, totalDailyCard = 0 } = data;
 
   const displayItems = [];
+  const fullCardAmount = totalCard + totalDailyCard;
 
   switch (filter) {
     case 'saldos':
@@ -25,22 +26,21 @@ export default function DayRow({ data, maxBalance, filter, onToggleVerify }) {
       displayItems.push({ value: totalSavings, icon: <span className={`${styles.typeIcon} ${styles.income}`}>Ec</span>, class: styles.income });
       break;
     case 'cartoes':
-      displayItems.push({ value: totalCard, icon: <span className={`${styles.typeIcon} ${styles.card}`}>C</span>, class: styles.card });
+      if (fullCardAmount > 0 || displayItems.length === 0) displayItems.push({ value: fullCardAmount, icon: <span className={`${styles.typeIcon} ${styles.card}`}>C</span>, class: styles.card });
       break;
     case 'diarios_cartoes':
-      displayItems.push({ value: dailyAmount + totalCard, icon: <span className={`${styles.typeIcon} ${styles.card}`}>D+C</span>, class: styles.card });
+      displayItems.push({ value: dailyAmount + fullCardAmount, icon: <span className={`${styles.typeIcon} ${styles.card}`}>D+C</span>, class: styles.card });
       break;
     case 'despesas_totais':
-      displayItems.push({ value: dailyAmount + totalCard + totalFixed, icon: <span className={`${styles.typeIcon} ${styles.expense}`}>DC+S</span>, class: styles.expense });
+      displayItems.push({ value: dailyAmount + fullCardAmount + totalFixed, icon: <span className={`${styles.typeIcon} ${styles.expense}`}>DC+S</span>, class: styles.expense });
       break;
     case 'todas':
     default:
       if (totalIncome > 0) displayItems.push({ value: totalIncome, icon: <span className={`${styles.typeIcon} ${styles.income}`}>E</span>, class: styles.income });
       if (totalFixed > 0) displayItems.push({ value: totalFixed, icon: <span className={`${styles.typeIcon} ${styles.expense}`}>S</span>, class: styles.expense });
-      if (totalCard > 0) displayItems.push({ value: totalCard, icon: <span className={`${styles.typeIcon} ${styles.card}`}>C</span>, class: styles.card });
+      if (fullCardAmount > 0) displayItems.push({ value: fullCardAmount, icon: <span className={`${styles.typeIcon} ${styles.card}`}>C</span>, class: styles.card });
       if (totalSavings > 0) displayItems.push({ value: totalSavings, icon: <span className={`${styles.typeIcon} ${styles.income}`}>Ec</span>, class: styles.income });
       
-      // Mostrar diário sempre se houver valor, ou se nada mais foi puxado nesta linha pro dia não ficar vazio
       if (dailyAmount !== 0 || displayItems.length === 0) displayItems.push({ value: dailyAmount, icon: <span className={`${styles.typeIcon} ${styles.daily}`}>D</span>, class: styles.daily });
       break;
   }

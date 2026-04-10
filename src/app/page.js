@@ -101,6 +101,7 @@ export default function HomePage() {
       <FilterSelector value={filter} onChange={setFilter} performance={summary.performance} />
 
       <div className={styles.dayList} id="day-list">
+        {/* ... (keep unmodified day list logic) ... */}
         {financeLoading ? (
           <div className={styles.loadingDays}>
             {Array.from({ length: 10 }, (_, i) => (
@@ -132,7 +133,7 @@ export default function HomePage() {
                     <div key={dayData.dateStr || dayData.day} ref={dayData.isToday && index === 0 ? todayRef : null}>
                       <div onClick={(e) => {
                         if (!e.target.closest('circle') && !e.target.closest('svg')) {
-                           setSelectedDay(dayData);
+                           setSelectedDay(dayData.dateStr); // store dateStr string, not the whole object
                         }
                       }}>
                         <DayRow
@@ -154,7 +155,7 @@ export default function HomePage() {
       <DayDetailsModal 
         isOpen={!!selectedDay} 
         onClose={() => setSelectedDay(null)} 
-        dayData={selectedDay} 
+        dayData={selectedDay ? monthsData.flatMap(m => m.forecast).find(d => d.dateStr === selectedDay) : null} 
       />
 
 

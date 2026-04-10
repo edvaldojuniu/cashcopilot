@@ -108,32 +108,39 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
          const selCard = cards.find(c => c.id === cardId);
          const cName = selCard ? selCard.name : 'Cartão';
          
-         // Derive start month from the date field (when the purchase happened)
-         const purchaseDate = new Date(date + 'T12:00:00');
-         const startMonthStr = `${purchaseDate.getFullYear()}-${String(purchaseDate.getMonth() + 1).padStart(2, '0')}`;
-         
-         let payload = {
-           card_name: cName,
-           card_id: cardId,
-           description,
-           amount: val,
-           due_day: selCard ? selCard.due_day : parseInt(dueDay),
-           is_active: true,
-           start_month: startMonthStr,
-         };
-         
-         if (recurrence === 'parcelada') {
-           const d = new Date(purchaseDate.getFullYear(), purchaseDate.getMonth() + parseInt(installments) - 1, 1);
-           payload.end_month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-         } else if (recurrence === 'unica') {
-           // Single purchase: only on the month it was bought
-           payload.end_month = startMonthStr;
+         if (recurrence === 'unica') {
+            // Lançamento pontual: vai pro diário para aparecer no dia da compra e somar na fatura dinamicamente
+            await addTransaction({
+              description: `${description} (${cName})`,
+              amount: val,
+              date,
+              type: 'card', // IMPORTANTE: tipo card fará o engine somá-lo na fatura dinamicamente
+              card_id: cardId
+            });
          } else {
-           // fixa/assinatura = indefinite
-           payload.end_month = null;
+            // Lançamento recorrente/parcelado: vai para a tabela de faturas fixas/parceladas
+            const purchaseDate = new Date(date + 'T12:00:00');
+            const startMonthStr = `${purchaseDate.getFullYear()}-${String(purchaseDate.getMonth() + 1).padStart(2, '0')}`;
+            
+            let payload = {
+              card_name: cName,
+              card_id: cardId,
+              description,
+              amount: val,
+              due_day: selCard ? selCard.due_day : parseInt(dueDay),
+              is_active: true,
+              start_month: startMonthStr,
+            };
+            
+            if (recurrence === 'parcelada') {
+              const d = new Date(purchaseDate.getFullYear(), purchaseDate.getMonth() + parseInt(installments) - 1, 1);
+              payload.end_month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            } else {
+              payload.end_month = null;
+            }
+            
+            await addCardBill(payload);
          }
-         
-         await addCardBill(payload);
       }
       
       onClose();

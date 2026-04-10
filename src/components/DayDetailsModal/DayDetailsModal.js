@@ -104,13 +104,13 @@ export default function DayDetailsModal({ isOpen, onClose, dayData }) {
 
                 {cardExpenses.length > 0 && (
                   <div className={styles.group}>
-                    <div className={styles.groupTitle}>Faturas de Cartão</div>
+                    <div className={styles.groupTitle}>Fechamento de Faturas (Cartão)</div>
                     <div className={styles.itemList}>
                       {cardExpenses.map((exp, i) => (
                         <div key={`crd-${i}`} className={styles.item}>
                           <div className={styles.itemInfo}>
                             <span className={styles.itemDesc}>{exp.description}</span>
-                            <span className={styles.itemType}>Cartão</span>
+                            <span className={styles.itemType}>Fatura / Parcela</span>
                           </div>
                           <span className={`${styles.itemAmount} ${styles.amountCard}`}>
                             {formatCurrency(exp.amount)}
@@ -121,9 +121,28 @@ export default function DayDetailsModal({ isOpen, onClose, dayData }) {
                   </div>
                 )}
 
+                {transactions.filter(t => t.type === 'card').length > 0 && (
+                  <div className={styles.group}>
+                    <div className={styles.groupTitle}>Compras no Cartão (Neste dia)</div>
+                    <div className={styles.itemList}>
+                      {transactions.filter(t => t.type === 'card').map((txn, i) => (
+                        <div key={`crd-txn-${i}`} className={styles.item}>
+                          <div className={styles.itemInfo}>
+                            <span className={styles.itemDesc}>{txn.description}</span>
+                            <span className={styles.itemType}>Compra Avulsa</span>
+                          </div>
+                          <span className={`${styles.itemAmount} ${styles.amountCard}`}>
+                            {formatCurrency(txn.amount)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {dailyTxns.length > 0 && (
                   <div className={styles.group}>
-                    <div className={styles.groupTitle}>Gastos Diários (Avulsos)</div>
+                    <div className={styles.groupTitle}>Gastos Diários (Dinheiro/Débito)</div>
                     <div className={styles.itemList}>
                       {dailyTxns.map((txn, i) => (
                         <div key={`txn-${i}`} className={styles.item}>

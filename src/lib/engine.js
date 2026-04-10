@@ -109,13 +109,15 @@ export function generateMonthForecast({
     cards.forEach(c => {
       // Se a fatura desse cartão vence neste exato dia...
       if (c.due_day === day) {
-        let closeCurrent = new Date(currYear, currMonth, c.closing_day);
-        let closePrev = new Date(currYear, currMonth - 1, c.closing_day);
+        // Padronizamos o fechamento para 7 dias antes do vencimento
+        let invoiceCloseDay = c.due_day > 7 ? c.due_day - 7 : 28 + c.due_day - 7;
         
-        // Ex: Vence 05, Fecha 25. A fatura do mês Atual reflete as compras entre 25/m-2 e 25/m-1.
-        if (c.closing_day > c.due_day) {
-          closeCurrent = new Date(currYear, currMonth - 1, c.closing_day);
-          closePrev = new Date(currYear, currMonth - 2, c.closing_day);
+        let closeCurrent = new Date(currYear, currMonth, invoiceCloseDay);
+        let closePrev = new Date(currYear, currMonth - 1, invoiceCloseDay);
+        
+        if (invoiceCloseDay > c.due_day) {
+          closeCurrent = new Date(currYear, currMonth - 1, invoiceCloseDay);
+          closePrev = new Date(currYear, currMonth - 2, invoiceCloseDay);
         }
 
         const invoiceTransactions = transactions.filter(t => {
@@ -165,6 +167,10 @@ export function generateMonthForecast({
     const dailyTxnsReal = dayTransactions.filter(t => t.type === 'daily');
     const totalRealDaily = dailyTxnsReal.reduce((sum, t) => sum + Number(t.amount), 0);
     
+    // Gastos reais avulsos no cartão (Pingo Diário do Cartão)
+    const cardTxnsReal = dayTransactions.filter(t => t.type === 'card');
+    const totalRealCardDaily = cardTxnsReal.reduce((sum, t) => sum + Number(t.amount), 0);
+    
     // Economias (Retiradas para investimento)
     const savingTxns = dayTransactions.filter(t => t.type === 'saving');
     const totalSavings = savingTxns.reduce((sum, t) => sum + Number(t.amount), 0);
@@ -192,10 +198,11 @@ export function generateMonthForecast({
       totalIncome,
       totalExpense,
       totalFixed,
-      totalCard,
+      totalCard,                  // Apenas a FATURA que cai neste dia (Invoice)
+      totalDailyCard: totalRealCardDaily, // Compras unitárias no cartão neste dia
       dailyAmount: dailyValue,    // O valor deduzido rigorosamente (Real se Passado, Previsão se Futuro)
       dailyBudget: dailyAmountBudget, // A meta pura (apenas para ui)
-      totalRealDaily,             // Total que gastou no dia de verdade (para debug e UI avançada)
+      totalRealDaily,             // Total que gastou no dia de verdade no dinheiro/débito
       totalSavings,
       balance: Math.round(balance * 100) / 100,
       transactions: dayTransactions,
