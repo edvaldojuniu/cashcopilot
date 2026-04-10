@@ -124,3 +124,55 @@
 .negative {
   color: var(--color-expense);
 }
+
+.invoiceRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px 6px 52px;
+  background: rgba(171, 71, 188, 0.05);
+  border-bottom: 1px solid var(--border-secondary);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.invoiceRow:hover {
+  background: rgba(171, 71, 188, 0.1);
+}
+
+.invoiceInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.invoiceIcon {
+  font-size: 14px;
+}
+
+.invoiceName {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.invoiceAmounts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-tertiary);
+}
+
+.invoiceValue {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-card);
+  font-variant-numeric: tabular-nums;
+}
+
+.invoicePaid {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-income);
+  text-transform: uppercase;
+}

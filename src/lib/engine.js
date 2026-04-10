@@ -120,42 +120,61 @@ export function generateMonthForecast({
           closePrev = new Date(currYear, currMonth - 2, invoiceCloseDay);
         }
 
-        const invoiceTransactions = transactions.filter(t => {
+        const singleTransactions = transactions.filter(t => {
           if (t.type !== 'card' || t.card_id !== c.id) return false;
           const tDate = new Date(`${t.date}T12:00:00`); // Fix time
           return tDate > closePrev && tDate <= closeCurrent;
         });
 
+        // 2) Procurar parcelamentos e assinaturas ativas para ESTE cartão que vencem neste dia
+        const installmentsForThisCard = [];
+        if (cardBills && cardBills.length > 0) {
+          cardBills.forEach(cb => {
+            if (cb.is_active !== false && cb.card_id === c.id && cb.due_day === day) {
+              const checkMonthStr = `${currYear}-${String(currMonth + 1).padStart(2, '0')}`;
+              if (cb.start_month && checkMonthStr < cb.start_month) return;
+              if (cb.end_month && checkMonthStr > cb.end_month) return;
+              
+              installmentsForThisCard.push({
+                ...cb,
+                description: cb.description || `Parcelamento/Assinatura`,
+                amount: Number(cb.amount),
+                type: 'card_installment',
+                date: dateStr // Para exibição no modal
+              });
+            }
+          });
+        }
+
+        const invoiceTransactions = [...singleTransactions, ...installmentsForThisCard];
+
+        // Procurar pagamentos antecipados que referenciam ESTE ciclo
+        const earlyPaymentsForThisInvoice = transactions.filter(t => {
+          if (t.type !== 'invoice_payment' || t.card_id !== c.id) return false;
+          const tDate = new Date(`${t.date}T12:00:00`);
+          // Pagamentos feitos desde o fechamento anterior ATÉ o dia do vencimento abatem esta fatura
+          const dueDayDate = new Date(currYear, currMonth, c.due_day);
+          return tDate > closePrev && tDate <= dueDayDate;
+        });
+
         const cardTotal = invoiceTransactions.reduce((sum, t) => sum + Number(t.amount), 0);
-        if (cardTotal > 0) {
+        const alreadyPaid = earlyPaymentsForThisInvoice.reduce((sum, t) => sum + Number(t.amount), 0);
+        const remainingToPay = cardTotal - alreadyPaid;
+
+        if (cardTotal > 0) { // Mostrar a fatura mesmo se estiver paga, apenas alterando o amount final e details
           expensesCards.push({
             id: `card-bill-${c.id}-${dateStr}`,
+            card_id: c.id,
             description: `Fatura ${c.name}`,
-            amount: cardTotal,
-            type: 'card'
+            amount: remainingToPay > 0 ? remainingToPay : 0,
+            originalTotal: cardTotal,
+            alreadyPaid: alreadyPaid,
+            type: 'card', // is an invoice
+            items: invoiceTransactions // injecting the items!
           });
         }
       }
     });
-
-    // Assinaturas e Parcelados de Cartão (credit_card_bills antigos e novos)
-    if (cardBills && cardBills.length > 0) {
-      cardBills.forEach(cb => {
-        if (cb.is_active !== false && cb.due_day === day) {
-          const checkMonthStr = `${currYear}-${String(currMonth + 1).padStart(2, '0')}`;
-          
-          if (cb.start_month && checkMonthStr < cb.start_month) return;
-          if (cb.end_month && checkMonthStr > cb.end_month) return;
-
-          expensesCards.push({
-            ...cb,
-            description: cb.description || `Parcela ${cb.card_name}`,
-            amount: Number(cb.amount),
-            type: 'card'
-          });
-        }
-      });
-    }
 
     const expenses = [...expensesFixed, ...expensesCards];
     const totalExpense = expenses.reduce((sum, e) => sum + e.amount, 0);

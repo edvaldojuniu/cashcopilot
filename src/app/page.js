@@ -9,6 +9,7 @@ import MonthNavigator from '@/components/MonthNavigator/MonthNavigator';
 import FilterSelector from '@/components/FilterSelector/FilterSelector';
 import DayRow from '@/components/DayRow/DayRow';
 import DayDetailsModal from '@/components/DayDetailsModal/DayDetailsModal';
+import InvoiceDetailsModal from '@/components/InvoiceDetailsModal/InvoiceDetailsModal';
 import styles from './page.module.css';
 
 export default function HomePage() {
@@ -21,6 +22,7 @@ export default function HomePage() {
 
   const [filter, setFilter] = useState('diarios');
   const [selectedDay, setSelectedDay] = useState(null);
+  const [selectedInvoice, setSelectedInvoice] = useState(null);
   const todayRef = useRef(null);
 
   const [windowWidth, setWindowWidth] = useState(0);
@@ -101,7 +103,6 @@ export default function HomePage() {
       <FilterSelector value={filter} onChange={setFilter} performance={summary.performance} />
 
       <div className={styles.dayList} id="day-list">
-        {/* ... (keep unmodified day list logic) ... */}
         {financeLoading ? (
           <div className={styles.loadingDays}>
             {Array.from({ length: 10 }, (_, i) => (
@@ -129,22 +130,24 @@ export default function HomePage() {
                   </div>
                 )}
                 <div className={styles.columnBody}>
-                  {mData.forecast.map((dayData) => (
+                  {mData.forecast.map((dayData) => {
+                    const enhancedDayData = { ...dayData, onOpenInvoiceDetails: setSelectedInvoice };
+                    return (
                     <div key={dayData.dateStr || dayData.day} ref={dayData.isToday && index === 0 ? todayRef : null}>
                       <div onClick={(e) => {
                         if (!e.target.closest('circle') && !e.target.closest('svg')) {
-                           setSelectedDay(dayData.dateStr); // store dateStr string, not the whole object
+                           setSelectedDay(dayData.dateStr); 
                         }
                       }}>
                         <DayRow
-                          data={dayData}
+                          data={enhancedDayData}
                           maxBalance={maxBalance}
                           filter={filter}
                           onToggleVerify={() => toggleVerifiedDay(dayData.dateStr)}
                         />
                       </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
               </div>
             ))}
@@ -158,6 +161,11 @@ export default function HomePage() {
         dayData={selectedDay ? monthsData.flatMap(m => m.forecast).find(d => d.dateStr === selectedDay) : null} 
       />
 
+      <InvoiceDetailsModal
+        isOpen={!!selectedInvoice}
+        onClose={() => setSelectedInvoice(null)}
+        invoice={selectedInvoice}
+      />
 
       <BottomNav />
     </div>
