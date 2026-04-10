@@ -50,16 +50,36 @@ CREATE TABLE variable_expenses (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Cartões de crédito cadastrados
+CREATE TABLE cards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT,
+  due_day INTEGER NOT NULL CHECK (due_day >= 1 AND due_day <= 31),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Dias marcados/verificados no diário
+CREATE TABLE verified_days (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  date TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(user_id, date)
+);
+
 -- Faturas de cartão de crédito (com parcelas)
 CREATE TABLE credit_card_bills (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  card_id UUID REFERENCES cards(id) ON DELETE SET NULL,
   card_name TEXT NOT NULL,
   description TEXT,
   amount DECIMAL(12,2) NOT NULL,
   due_day INTEGER NOT NULL CHECK (due_day >= 1 AND due_day <= 31),
   start_month TEXT NOT NULL,  -- formato: '2026-01'
-  end_month TEXT NOT NULL,    -- formato: '2026-12'
+  end_month TEXT,             -- formato: '2026-12' (pode ser nulo para fixa)
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT now()
 );
@@ -71,7 +91,7 @@ CREATE TABLE daily_transactions (
   date DATE NOT NULL,
   amount DECIMAL(12,2) NOT NULL,
   description TEXT,
-  type TEXT NOT NULL CHECK (type IN ('income', 'expense', 'daily', 'card')),
+  type TEXT NOT NULL CHECK (type IN ('income', 'expense', 'daily', 'card', 'saving')),
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -95,6 +115,8 @@ ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE income_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fixed_expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE variable_expenses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE verified_days ENABLE ROW LEVEL SECURITY;
 ALTER TABLE credit_card_bills ENABLE ROW LEVEL SECURITY;
 ALTER TABLE daily_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE monthly_savings ENABLE ROW LEVEL SECURITY;
@@ -146,6 +168,29 @@ CREATE POLICY "Users can update own variable expenses" ON variable_expenses
   FOR UPDATE USING (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete own variable expenses" ON variable_expenses
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Cards
+CREATE POLICY "Users can view own cards" ON cards
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own cards" ON cards
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own cards" ON cards
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own cards" ON cards
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Verified Days
+CREATE POLICY "Users can view own verified days" ON verified_days
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own verified days" ON verified_days
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own verified days" ON verified_days
   FOR DELETE USING (auth.uid() = user_id);
 
 -- Credit card bills

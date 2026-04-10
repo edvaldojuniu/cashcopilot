@@ -47,7 +47,7 @@ export function FinanceProvider({ children }) {
     }, 10000);
 
     try {
-      const [incomes, fixed, variable, dbCards, txns, checkedDays, billsRaw] = await Promise.all([
+      const queries = [
         supabase.from('income_entries').select('*').eq('user_id', user.id).order('due_day'),
         supabase.from('fixed_expenses').select('*').eq('user_id', user.id).order('due_day'),
         supabase.from('variable_expenses').select('*').eq('user_id', user.id).order('description'),
@@ -55,15 +55,26 @@ export function FinanceProvider({ children }) {
         supabase.from('daily_transactions').select('*').eq('user_id', user.id).order('date'),
         supabase.from('verified_days').select('*').eq('user_id', user.id),
         supabase.from('credit_card_bills').select('*').eq('user_id', user.id).order('due_day')
-      ]);
+      ];
 
-      setIncomeEntries(incomes.data || []);
-      setFixedExpenses(fixed.data || []);
-      setVariableExpenses(variable.data || []);
-      setCards(dbCards.data || []);
-      setTransactions(txns.data || []);
-      setVerifiedDays(checkedDays.data || []);
-      setCardBills(billsRaw.data || []);
+      const results = await Promise.allSettled(queries);
+
+      const extract = (index) => {
+        const res = results[index];
+        if (res.status === 'fulfilled' && !res.value.error) return res.value.data || [];
+        if (res.status === 'fulfilled' && res.value.error) {
+          console.warn(`Query ${index} failed:`, res.value.error.message);
+        }
+        return [];
+      };
+
+      setIncomeEntries(extract(0));
+      setFixedExpenses(extract(1));
+      setVariableExpenses(extract(2));
+      setCards(extract(3));
+      setTransactions(extract(4));
+      setVerifiedDays(extract(5));
+      setCardBills(extract(6));
     } catch (error) {
       console.error('Error fetching finance data:', error);
     } finally {
