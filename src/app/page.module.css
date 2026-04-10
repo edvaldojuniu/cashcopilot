@@ -1,7 +1,10 @@
 .page {
-  min-height: 100dvh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
   background: var(--bg-secondary);
-  padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 60px);
+  padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 56px);
+  overflow: hidden;
 }
 
 .loadingScreen {
@@ -34,6 +37,8 @@
 }
 
 .dayList {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -140,14 +145,11 @@
 
 @media (min-width: 1024px) {
   .page {
-    /* Limit height to viewport to force internal scroll */
-    height: 100dvh;
-    overflow: hidden;
+    /* Rely on the base flex layout to handle height mapping */
   }
   
   .dayList {
-    height: 100%;
-    overflow: hidden; /* We handle scrolling inside the columns now */
+    overflow: hidden; /* We handle vertical scrolling inside the columns now */
   }
 
   .monthColumns {
