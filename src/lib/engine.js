@@ -164,6 +164,10 @@ export function generateMonthForecast({
     const dayTransactions = transactions.filter(t => t.date === dateStr);
     const dailyTxnsReal = dayTransactions.filter(t => t.type === 'daily');
     const totalRealDaily = dailyTxnsReal.reduce((sum, t) => sum + Number(t.amount), 0);
+    
+    // Economias (Retiradas para investimento)
+    const savingTxns = dayTransactions.filter(t => t.type === 'saving');
+    const totalSavings = savingTxns.reduce((sum, t) => sum + Number(t.amount), 0);
 
     // Substituição Absoluta do Orçamento (A pedido do Usuário)
     let dailyValue = 0;
@@ -173,7 +177,7 @@ export function generateMonthForecast({
       dailyValue = showDailyForecast ? dailyAmountBudget : 0;
     }
 
-    balance = balance + totalIncome - totalExpense - dailyValue;
+    balance = balance + totalIncome - totalExpense - dailyValue - totalSavings;
 
     days.push({
       day,
@@ -192,6 +196,7 @@ export function generateMonthForecast({
       dailyAmount: dailyValue,    // O valor deduzido rigorosamente (Real se Passado, Previsão se Futuro)
       dailyBudget: dailyAmountBudget, // A meta pura (apenas para ui)
       totalRealDaily,             // Total que gastou no dia de verdade (para debug e UI avançada)
+      totalSavings,
       balance: Math.round(balance * 100) / 100,
       transactions: dayTransactions,
       hasRealData: dayTransactions.length > 0,
@@ -204,18 +209,52 @@ export function generateMonthForecast({
 export function calculateMonthlySummary(forecast) {
   const totalIncome = forecast.reduce((sum, d) => sum + d.totalIncome, 0);
   const totalExpense = forecast.reduce((sum, d) => sum + d.totalExpense, 0);
+  const totalFixed = forecast.reduce((sum, d) => sum + d.totalFixed, 0);
+  const totalCard = forecast.reduce((sum, d) => sum + d.totalCard, 0);
   const totalDaily = forecast.reduce((sum, d) => sum + d.dailyAmount, 0);
-  const totalExpenseAll = totalExpense + totalDaily;
+  const totalSavings = forecast.reduce((sum, d) => sum + d.totalSavings, 0);
+  
+  const custoDeVida = totalExpense + totalDaily;
+  const totalExpenseAll = custoDeVida + totalSavings;
   const performance = totalIncome - totalExpenseAll;
   const lastDayBalance = forecast[forecast.length - 1]?.balance || 0;
+
+  // Médias
+  const daysInMonth = forecast.length || 1;
+  const averageDaily = forecast.reduce((sum, d) => sum + d.totalRealDaily, 0) / daysInMonth;
+  const averageCard = totalCard / daysInMonth;
+  const averageDailyCard = (totalCard + forecast.reduce((sum, d) => sum + d.totalRealDaily, 0)) / daysInMonth;
+  const averageDailyCardFixed = (custoDeVida) / daysInMonth; // fixed + card + daily
+
+  // Geração de Logs planos (Flattened Log Array para Aba Totais)
+  const logs = [];
+  forecast.forEach(d => {
+    // Incomes
+    d.incomes.forEach(i => logs.push({ ...i, logDate: d.dateStr, group: 'income' }));
+    // Expenses (Fixed + Card)
+    d.expenses.forEach(e => logs.push({ ...e, logDate: d.dateStr, group: e.type === 'card' ? 'card' : 'fixed' }));
+    // Transactions (Daily + Savings)
+    d.transactions.forEach(t => logs.push({ ...t, logDate: d.dateStr, group: t.type === 'saving' ? 'saving' : 'daily' }));
+  });
 
   return {
     totalIncome: Math.round(totalIncome * 100) / 100,
     totalExpense: Math.round(totalExpense * 100) / 100,
+    totalFixed: Math.round(totalFixed * 100) / 100,
+    totalCard: Math.round(totalCard * 100) / 100,
     totalDaily: Math.round(totalDaily * 100) / 100,
+    totalSavings: Math.round(totalSavings * 100) / 100,
+    custoDeVida: Math.round(custoDeVida * 100) / 100,
     totalExpenseAll: Math.round(totalExpenseAll * 100) / 100,
     performance: Math.round(performance * 100) / 100,
     lastDayBalance: Math.round(lastDayBalance * 100) / 100,
+    averages: {
+      daily: Math.round(averageDaily * 100) / 100,
+      card: Math.round(averageCard * 100) / 100,
+      dailyCard: Math.round(averageDailyCard * 100) / 100,
+      dailyCardFixed: Math.round(averageDailyCardFixed * 100) / 100,
+    },
+    logs
   };
 }
 

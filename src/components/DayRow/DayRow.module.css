@@ -46,8 +46,21 @@
 .typeCell {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
   padding: 0 var(--space-sm);
+}
+
+.typeCellContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.typeCellItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  cursor: pointer;
 }
 
 .typeIcon {

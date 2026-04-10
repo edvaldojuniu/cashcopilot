@@ -140,7 +140,14 @@
 
 @media (min-width: 1024px) {
   .page {
-    /* override padding since container handles it */
+    /* Limit height to viewport to force internal scroll */
+    height: 100dvh;
+    overflow: hidden;
+  }
+  
+  .dayList {
+    height: 100%;
+    overflow: hidden; /* We handle scrolling inside the columns now */
   }
 
   .monthColumns {
@@ -148,13 +155,32 @@
     overflow-x: auto;
     scroll-snap-type: x mandatory;
     gap: var(--space-lg);
-    padding: 0 var(--space-md);
+    padding: 0 var(--space-md) 24px var(--space-md); /* extra space for bottom scrollbar */
     align-items: flex-start;
+    height: 100%;
+    scrollbar-width: auto; /* ensure scrollbar is visible */
+  }
+
+  .monthColumns::-webkit-scrollbar {
+    height: 12px;
+  }
+  
+  .monthColumns::-webkit-scrollbar-track {
+    background: var(--bg-surface);
+    border-radius: 8px;
+  }
+  
+  .monthColumns::-webkit-scrollbar-thumb {
+    background-color: var(--border-primary);
+    border-radius: 8px;
   }
 
   .monthColumn {
     flex: 0 0 420px;
     max-width: 420px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
     scroll-snap-align: start;
     background: var(--bg-surface);
     border: 1px solid var(--border-primary);
@@ -162,12 +188,29 @@
     overflow: hidden;
   }
 
-  .monthHeader {
-    display: block;
-    padding: var(--space-md);
-    text-align: center;
-    font-weight: var(--font-bold);
-    background: var(--bg-surface-hover);
-    border-bottom: 1px solid var(--border-primary);
+  .monthColumn > :last-child {
+    flex: 1;
+    overflow-y: auto;
+    scrollbar-width: none;
   }
+
+  .monthColumn > :last-child::-webkit-scrollbar {
+    display: none;
+  }
+
+  .monthHeader {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-sm);
+    background: var(--bg-surface-hover);
+    font-weight: var(--font-bold);
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-primary);
+    text-transform: capitalize;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+}
 }

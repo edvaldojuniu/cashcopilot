@@ -10,35 +10,36 @@
 .header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-sm);
+  width: 100%;
 }
 
-.headerLabel {
-  font-size: var(--text-xs);
-  font-weight: var(--font-semibold);
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  min-width: 44px;
+.filtersWrapper {
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin; /* Firefox */
+  padding-bottom: 4px;
 }
 
-.headerLabel:last-child {
-  text-align: right;
+.filtersWrapper::-webkit-scrollbar {
+  height: 6px;
+}
+
+.filtersWrapper::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+  border-radius: 4px;
+}
+
+.filtersWrapper::-webkit-scrollbar-thumb {
+  background: var(--border-primary);
+  border-radius: 4px;
 }
 
 .filters {
   display: flex;
-  gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  flex: 1;
-  justify-content: center;
-}
-
-.filters::-webkit-scrollbar {
-  display: none;
+  gap: 8px;
+  flex-wrap: nowrap;
+  min-width: max-content; /* Garante que os filhos estiquem a div */
+  padding: 0 4px;
 }
 
 .pill {
