@@ -36,6 +36,29 @@ export function FinanceProvider({ children }) {
     }
   }, [user]);
 
+  // Rebusca dados sempre que o usuário volta para a aba/app
+  useEffect(() => {
+    if (!user || !supabase) return;
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        fetchAllData();
+      }
+    }
+
+    function handleFocus() {
+      fetchAllData();
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [user]); // ← re-registra os listeners quando user muda
+
   function resetState() {
     setIncomeEntries([]);
     setFixedExpenses([]);
@@ -51,7 +74,7 @@ export function FinanceProvider({ children }) {
     if (!supabase || !user) return;
     setLoading(true);
     let isMounted = true;
-    
+
     // Safety timeout: 8 seconds maximum
     const fallbackTimeout = setTimeout(() => {
       if (isMounted) {
@@ -262,9 +285,9 @@ export function FinanceProvider({ children }) {
 
   async function toggleVerifiedDay(dateStr) {
     if (!supabase) return { error: 'Not configured' };
-    
+
     const existing = verifiedDays.find(d => d.date === dateStr);
-    
+
     if (existing) {
       const { error } = await supabase.from('verified_days').delete().eq('id', existing.id);
       if (!error) setVerifiedDays(prev => prev.filter(d => d.id !== existing.id));
@@ -351,7 +374,7 @@ export function FinanceProvider({ children }) {
     (startYear, startMonth, numMonths = 6) => {
       // Find initial balance exactly like getMonthForecast
       if (!profile) return [];
-      
+
       const startOfHistoryYear = new Date().getFullYear();
       let balance = Number(profile.initial_balance || 0);
       const targetMonthIndex = (startYear - startOfHistoryYear) * 12 + startMonth;
@@ -359,7 +382,7 @@ export function FinanceProvider({ children }) {
       for (let i = 0; i < targetMonthIndex; i++) {
         let m = i % 12;
         let y = startOfHistoryYear + Math.floor(i / 12);
-        
+
         const monthTxns = transactions.filter((t) => {
           const d = new Date(t.date);
           return d.getFullYear() === y && d.getMonth() === m;
@@ -397,14 +420,14 @@ export function FinanceProvider({ children }) {
         });
 
         const summary = calculateMonthlySummary(forecast);
-        
+
         allMonths.push({
           year: y, month: m, forecast, summary, initialBalance: currentBalance
         });
 
         currentBalance = forecast[forecast.length - 1]?.balance || 0;
       }
-      
+
       return allMonths;
     },
     [profile, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays, transactions]
@@ -456,15 +479,16 @@ export function FinanceProvider({ children }) {
     setViewMonth, setViewYear,
     goToNextMonth, goToPrevMonth, goToCurrentMonth,
     refetchVariableExpenses,
+    refetch: fetchAllData,
   };
 
   return (
     <FinanceContext.Provider value={value}>
       {children}
-      <QuickAddModal 
-        isOpen={isQuickAddOpen} 
-        onClose={() => setQuickAddOpen(false)} 
-        initialType="diario" 
+      <QuickAddModal
+        isOpen={isQuickAddOpen}
+        onClose={() => setQuickAddOpen(false)}
+        initialType="diario"
       />
     </FinanceContext.Provider>
   );
