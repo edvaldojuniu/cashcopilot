@@ -130,8 +130,8 @@ export function AuthProvider({ children }) {
     } catch (err) {
       console.error('Error signing out', err);
     } finally {
-      setUser(null);
-      setProfile(null);
+      // Force hard reset — clears React state AND Supabase session cache
+      window.location.href = '/';
     }
   }
 

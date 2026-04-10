@@ -10,11 +10,11 @@ import { formatCurrency } from '@/lib/utils';
 export default function ConfigPage() {
   const { profile, updateProfile, signOut } = useAuth();
   const {
-    incomeEntries, fixedExpenses, variableExpenses, cardBills,
+    incomeEntries, fixedExpenses, variableExpenses, cards, cardBills,
     addIncomeEntry, updateIncomeEntry, deleteIncomeEntry,
     addFixedExpense, updateFixedExpense, deleteFixedExpense,
     addVariableExpense, updateVariableExpense, deleteVariableExpense,
-    addCardBill, updateCardBill, deleteCardBill,
+    addCard, deleteCard,
   } = useFinance();
 
   const [activeTab, setActiveTab] = useState('geral');
@@ -68,13 +68,10 @@ export default function ConfigPage() {
         });
         break;
       case 'card':
-        result = await addCardBill({
-          card_name: entry.card_name,
-          description: entry.description,
-          amount: Number(entry.amount),
+        result = await addCard({
+          name: entry.card_name,
+          description: entry.description || null,
           due_day: Number(entry.due_day),
-          start_month: entry.start_month,
-          end_month: entry.end_month,
         });
         break;
     }
@@ -92,7 +89,7 @@ export default function ConfigPage() {
       case 'income': await deleteIncomeEntry(id); break;
       case 'fixed': await deleteFixedExpense(id); break;
       case 'variable': await deleteVariableExpense(id); break;
-      case 'card': await deleteCardBill(id); break;
+      case 'card': await deleteCard(id); break;
     }
   }
 
@@ -380,30 +377,37 @@ export default function ConfigPage() {
           <div className={styles.section}>
             <div className="card">
               <h3 className={styles.sectionTitle}>
-                Faturas de Cartão
-                <span className={styles.badge}>{cardBills.length}</span>
+                Seus Cartões de Crédito
+                <span className={styles.badge}>{cards.length}</span>
               </h3>
 
-              {cardBills.map((entry) => (
-                <div key={entry.id} className={styles.listItem}>
+              <p className={styles.fieldHint} style={{ marginBottom: '12px' }}>
+                Cadastre cada cartão aqui. Os gastos no cartão são lançados pelo botão <strong>+</strong> na tela principal como &quot;Gasto no Cartão&quot;, e a fatura acumula automaticamente.
+              </p>
+
+              {cards.map((card) => (
+                <div key={card.id} className={styles.listItem}>
                   <div className={styles.listInfo}>
-                    <span className={styles.listName}>{entry.card_name}</span>
+                    <span className={styles.listName}>💳 {card.name}</span>
                     <span className={styles.listMeta}>
-                      {entry.description && `${entry.description} · `}
-                      Dia {entry.due_day} · {entry.start_month} até {entry.end_month}
+                      Vencimento: dia {card.due_day}
+                      {card.description && ` · ${card.description}`}
                     </span>
                   </div>
-                  <span className={`${styles.listAmount} currency-negative`}>
-                    {formatCurrency(entry.amount)}
-                  </span>
-                  <button className={styles.deleteBtn} onClick={() => handleDelete('card', entry.id)}>
+                  <button className={styles.deleteBtn} onClick={() => handleDelete('card', card.id)}>
                     ✕
                   </button>
                 </div>
               ))}
 
+              {cards.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '16px', color: 'var(--text-tertiary)', fontSize: '14px' }}>
+                  Nenhum cartão cadastrado ainda.
+                </div>
+              )}
+
               <div className={styles.addForm}>
-                <h4 className={styles.addTitle}>Adicionar Fatura do Cartão</h4>
+                <h4 className={styles.addTitle}>Adicionar Cartão</h4>
                 <div className={styles.addFields}>
                   <input
                     className="input"
@@ -421,43 +425,19 @@ export default function ConfigPage() {
                     <input
                       className="input"
                       type="number"
-                      placeholder="Valor parcela"
-                      value={formData.amount || ''}
-                      onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                      step="0.01"
-                    />
-                    <input
-                      className="input"
-                      type="number"
-                      placeholder="Dia vencimento"
+                      placeholder="Dia de vencimento"
                       value={formData.due_day || ''}
                       onChange={(e) => setFormData({ ...formData, due_day: e.target.value })}
                       min="1"
                       max="31"
                     />
                   </div>
-                  <div className={styles.addRow}>
-                    <div>
-                      <label className="label">Mês início</label>
-                      <input
-                        className="input"
-                        type="month"
-                        value={formData.start_month || ''}
-                        onChange={(e) => setFormData({ ...formData, start_month: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className="label">Mês fim</label>
-                      <input
-                        className="input"
-                        type="month"
-                        value={formData.end_month || ''}
-                        onChange={(e) => setFormData({ ...formData, end_month: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                  <button className="btn btn-primary btn-full" onClick={() => handleAdd('card')}>
-                    Adicionar
+                  <button
+                    className="btn btn-primary btn-full"
+                    onClick={() => handleAdd('card')}
+                    disabled={!formData.card_name || !formData.due_day}
+                  >
+                    Adicionar Cartão
                   </button>
                 </div>
               </div>

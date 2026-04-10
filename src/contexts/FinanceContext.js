@@ -27,38 +27,6 @@ export function FinanceProvider({ children }) {
   const [viewMonth, setViewMonth] = useState(new Date().getMonth());
   const [viewYear, setViewYear] = useState(new Date().getFullYear());
 
-  // Fetch all data when user is available
-  useEffect(() => {
-    if (user && supabase) {
-      fetchAllData();
-    } else {
-      resetState();
-    }
-  }, [user]);
-
-  // Rebusca dados sempre que o usuário volta para a aba/app
-  useEffect(() => {
-    if (!user || !supabase) return;
-
-    function handleVisibilityChange() {
-      if (document.visibilityState === 'visible') {
-        fetchAllData();
-      }
-    }
-
-    function handleFocus() {
-      fetchAllData();
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, [user]); // ← re-registra os listeners quando user muda
-
   function resetState() {
     setIncomeEntries([]);
     setFixedExpenses([]);
@@ -70,18 +38,13 @@ export function FinanceProvider({ children }) {
     setLoading(false);
   }
 
-  async function fetchAllData() {
+  const fetchAllData = useCallback(async () => {
     if (!supabase || !user) return;
     setLoading(true);
-    let isMounted = true;
 
-    // Safety timeout: 8 seconds maximum
     const fallbackTimeout = setTimeout(() => {
-      if (isMounted) {
-        console.error("Timeout do banco de dados excedido (8s)");
-        setLoading(false);
-      }
-    }, 8000);
+      setLoading(false);
+    }, 10000);
 
     try {
       const [incomes, fixed, variable, dbCards, txns, checkedDays, billsRaw] = await Promise.all([
@@ -94,24 +57,48 @@ export function FinanceProvider({ children }) {
         supabase.from('credit_card_bills').select('*').eq('user_id', user.id).order('due_day')
       ]);
 
-      if (isMounted) {
-        setIncomeEntries(incomes.data || []);
-        setFixedExpenses(fixed.data || []);
-        setVariableExpenses(variable.data || []);
-        setCards(dbCards.data || []);
-        setTransactions(txns.data || []);
-        setVerifiedDays(checkedDays.data || []);
-        setCardBills(billsRaw.data || []);
-      }
+      setIncomeEntries(incomes.data || []);
+      setFixedExpenses(fixed.data || []);
+      setVariableExpenses(variable.data || []);
+      setCards(dbCards.data || []);
+      setTransactions(txns.data || []);
+      setVerifiedDays(checkedDays.data || []);
+      setCardBills(billsRaw.data || []);
     } catch (error) {
       console.error('Error fetching finance data:', error);
     } finally {
-      if (isMounted) {
-        setLoading(false);
-        clearTimeout(fallbackTimeout);
-      }
+      setLoading(false);
+      clearTimeout(fallbackTimeout);
     }
-  }
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch when user changes
+  useEffect(() => {
+    if (user && supabase) {
+      fetchAllData();
+    } else {
+      resetState();
+    }
+  }, [user, fetchAllData]);
+
+  // Refetch when app becomes visible/focused
+  useEffect(() => {
+    if (!user || !supabase) return;
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') fetchAllData();
+    }
+    function handleFocus() {
+      fetchAllData();
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [user, fetchAllData]);
 
   // --- CRUD Operations ---
 

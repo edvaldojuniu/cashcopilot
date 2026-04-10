@@ -101,40 +101,39 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
          else await addIncomeEntry(payload);
       }
       else if (type === 'card') {
+         if (cards.length === 0) {
+           alert('Você não possui cartões cadastrados. Vá em Config → Cartões.');
+           return;
+         }
          const selCard = cards.find(c => c.id === cardId);
          const cName = selCard ? selCard.name : 'Cartão';
          
-         if (recurrence === 'unica') {
-            await addTransaction({
-              description: `${description} (${cName})`,
-              amount: val,
-              date,
-              type: 'card',
-              card_id: cardId
-            });
+         // Derive start month from the date field (when the purchase happened)
+         const purchaseDate = new Date(date + 'T12:00:00');
+         const startMonthStr = `${purchaseDate.getFullYear()}-${String(purchaseDate.getMonth() + 1).padStart(2, '0')}`;
+         
+         let payload = {
+           card_name: cName,
+           card_id: cardId,
+           description,
+           amount: val,
+           due_day: selCard ? selCard.due_day : parseInt(dueDay),
+           is_active: true,
+           start_month: startMonthStr,
+         };
+         
+         if (recurrence === 'parcelada') {
+           const d = new Date(purchaseDate.getFullYear(), purchaseDate.getMonth() + parseInt(installments) - 1, 1);
+           payload.end_month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+         } else if (recurrence === 'unica') {
+           // Single purchase: only on the month it was bought
+           payload.end_month = startMonthStr;
          } else {
-            const now = new Date();
-            const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-            
-            let payload = {
-              card_name: cName, // Compatibility
-              card_id: cardId,
-              description,
-              amount: val,
-              due_day: selCard ? selCard.due_day : parseInt(dueDay),
-              is_active: true,
-              start_month: monthStr
-            };
-            
-            if (recurrence === 'parcelada') {
-              const d = new Date(now.getFullYear(), now.getMonth() + parseInt(installments) - 1, 1);
-              payload.end_month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-            } else {
-              payload.end_month = null;
-            }
-            
-            await addCardBill(payload);
+           // fixa/assinatura = indefinite
+           payload.end_month = null;
          }
+         
+         await addCardBill(payload);
       }
       
       onClose();
@@ -177,9 +176,9 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
             <input type="text" required value={description} onChange={e => setDescription(e.target.value)} placeholder="Ex: Mercado, Uber, Salário..." />
           </div>
 
-          {(type === 'diario' || type === 'saving' || (type === 'card' && recurrence === 'unica')) && (
+          {(type === 'diario' || type === 'saving' || type === 'card') && (
             <div className={styles.formGroup}>
-              <label>Data</label>
+              <label>{type === 'card' ? 'Data da Compra' : 'Data'}</label>
               <input type="date" required value={date} onChange={e => setDate(e.target.value)} />
             </div>
           )}
@@ -200,13 +199,24 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
             </div>
           )}
 
-          {type !== 'diario' && (
+          {type === 'card' && (
             <div className={styles.formGroup}>
               <label>Repetição</label>
               <select value={recurrence} onChange={e => setRecurrence(e.target.value)}>
-                <option value="unica">Compra Única (só 1 vez)</option>
-                <option value="fixa">Mensal / Assinatura Infinita</option>
-                <option value="parcelada">Parcelada (Termina)</option>
+                <option value="unica">Compra Única (só neste mês)</option>
+                <option value="parcelada">Parcelada (termina)</option>
+                <option value="fixa">Assinatura Mensal (sem fim)</option>
+              </select>
+            </div>
+          )}
+
+          {(type === 'expense' || type === 'income') && (
+            <div className={styles.formGroup}>
+              <label>Repetição</label>
+              <select value={recurrence} onChange={e => setRecurrence(e.target.value)}>
+                <option value="unica">Única (só este mês)</option>
+                <option value="fixa">Recorrente (sem fim)</option>
+                <option value="parcelada">Parcelada (termina)</option>
               </select>
             </div>
           )}
