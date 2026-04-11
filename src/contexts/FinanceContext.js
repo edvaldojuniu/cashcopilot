@@ -144,12 +144,19 @@ export function FinanceProvider({ children }) {
 
   useEffect(() => {
     if (!user || loading || authLoading) return;
+
+    // ← NÃO salva se todos os arrays estão vazios (evita sobrescrever cache com estado vazio)
+    const hasData = incomeEntries.length > 0 || fixedExpenses.length > 0 ||
+      variableExpenses.length > 0 || cards.length > 0 ||
+      transactions.length > 0 || verifiedDays.length > 0 || cardBills.length > 0;
+
+    if (!hasData) return; // ← ignora save quando não há dados
+
     saveToCache(user.id, {
       incomeEntries, fixedExpenses, variableExpenses,
       cards, transactions, verifiedDays, cardBills,
     });
   }, [incomeEntries, fixedExpenses, variableExpenses, cards, transactions, verifiedDays, cardBills]);
-
   // --- CRUD Operations --- (igual ao seu, sem alterações)
 
   async function addIncomeEntry(entry) {
