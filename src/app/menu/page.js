@@ -13,9 +13,9 @@ export default function MenuPage() {
   const { theme, toggleTheme } = useTheme();
 
   async function handleLogout() {
-    await signOut();
-    router.push('/');
-    router.refresh();
+    await signOut(); // AuthContext limpa user e profile
+    router.push('/'); // Navega para login
+    router.refresh(); // Invalida cache do Next.js
   }
 
   return (

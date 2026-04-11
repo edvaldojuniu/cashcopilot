@@ -1,12 +1,16 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from './AuthContext';
 import { generateMonthForecast, calculateMonthlySummary } from '@/lib/engine';
 import QuickAddModal from '@/components/QuickAddModal/QuickAddModal';
 
 const FinanceContext = createContext({});
+
+// Tempo mínimo entre refetches automáticos (30 segundos)
+// Evita rebuscar ao trocar de aba rapidamente sem mudança nos dados
+const REFETCH_THROTTLE_MS = 30 * 1000;
 
 export function FinanceProvider({ children }) {
   const { user, profile } = useAuth();
@@ -20,12 +24,12 @@ export function FinanceProvider({ children }) {
   const [verifiedDays, setVerifiedDays] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Global UI State
   const [isQuickAddOpen, setQuickAddOpen] = useState(false);
-
-  // Current view state
   const [viewMonth, setViewMonth] = useState(new Date().getMonth());
   const [viewYear, setViewYear] = useState(new Date().getFullYear());
+
+  // Timestamp do último fetch bem-sucedido
+  const lastFetchRef = useRef(0);
 
   function resetState() {
     setIncomeEntries([]);
@@ -36,15 +40,18 @@ export function FinanceProvider({ children }) {
     setTransactions([]);
     setVerifiedDays([]);
     setLoading(false);
+    lastFetchRef.current = 0;
   }
 
-  const fetchAllData = useCallback(async () => {
+  const fetchAllData = useCallback(async ({ force = false } = {}) => {
     if (!supabase || !user) return;
-    setLoading(true);
 
-    const fallbackTimeout = setTimeout(() => {
-      setLoading(false);
-    }, 10000);
+    // Se não forçado, respeita o throttle — não rebusca se foi recente
+    const now = Date.now();
+    if (!force && now - lastFetchRef.current < REFETCH_THROTTLE_MS) return;
+
+    setLoading(true);
+    const fallbackTimeout = setTimeout(() => setLoading(false), 10000);
 
     try {
       const queries = [
@@ -54,7 +61,7 @@ export function FinanceProvider({ children }) {
         supabase.from('cards').select('*').eq('user_id', user.id).order('name'),
         supabase.from('daily_transactions').select('*').eq('user_id', user.id).order('date'),
         supabase.from('verified_days').select('*').eq('user_id', user.id),
-        supabase.from('credit_card_bills').select('*').eq('user_id', user.id).order('due_day')
+        supabase.from('credit_card_bills').select('*').eq('user_id', user.id).order('due_day'),
       ];
 
       const results = await Promise.allSettled(queries);
@@ -62,9 +69,8 @@ export function FinanceProvider({ children }) {
       const extract = (index) => {
         const res = results[index];
         if (res.status === 'fulfilled' && !res.value.error) return res.value.data || [];
-        if (res.status === 'fulfilled' && res.value.error) {
+        if (res.status === 'fulfilled' && res.value.error)
           console.warn(`Query ${index} failed:`, res.value.error.message);
-        }
         return [];
       };
 
@@ -75,63 +81,55 @@ export function FinanceProvider({ children }) {
       setTransactions(extract(4));
       setVerifiedDays(extract(5));
       setCardBills(extract(6));
+
+      // Registra o momento do fetch bem-sucedido
+      lastFetchRef.current = Date.now();
     } catch (error) {
       console.error('Error fetching finance data:', error);
     } finally {
       setLoading(false);
       clearTimeout(fallbackTimeout);
     }
-  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user]);
 
-  // Fetch when user changes
+  // ✅ Fetch forçado ao logar (user muda de null → objeto)
   useEffect(() => {
     if (user && supabase) {
-      fetchAllData();
+      fetchAllData({ force: true });
     } else {
       resetState();
     }
   }, [user, fetchAllData]);
 
-  // Refetch when app becomes visible/focused
+  // ✅ Refetch inteligente ao voltar ao app/aba
+  // Só rebusca se passaram mais de 30s desde o último fetch
+  // Não irrita o usuário que troca de aba rapidamente
   useEffect(() => {
     if (!user || !supabase) return;
 
     function handleVisibilityChange() {
-      if (document.visibilityState === 'visible') fetchAllData();
-    }
-    function handleFocus() {
-      fetchAllData();
+      if (document.visibilityState === 'visible') {
+        fetchAllData(); // throttle interno decide se vai ou não
+      }
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
-    };
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [user, fetchAllData]);
 
   // --- CRUD Operations ---
+  // Todos os CRUDs atualizam o state local imediatamente (sem rebuscar tudo)
 
   async function addIncomeEntry(entry) {
     if (!supabase) return { error: 'Not configured' };
-    const { data, error } = await supabase
-      .from('income_entries')
-      .insert({ ...entry, user_id: user.id })
-      .select()
-      .single();
+    const { data, error } = await supabase.from('income_entries').insert({ ...entry, user_id: user.id }).select().single();
     if (!error) setIncomeEntries((prev) => [...prev, data].sort((a, b) => a.due_day - b.due_day));
     return { data, error };
   }
 
   async function updateIncomeEntry(id, updates) {
     if (!supabase) return { error: 'Not configured' };
-    const { data, error } = await supabase
-      .from('income_entries')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
+    const { data, error } = await supabase.from('income_entries').update(updates).eq('id', id).select().single();
     if (!error) setIncomeEntries((prev) => prev.map((e) => (e.id === id ? data : e)));
     return { data, error };
   }
@@ -145,23 +143,14 @@ export function FinanceProvider({ children }) {
 
   async function addFixedExpense(entry) {
     if (!supabase) return { error: 'Not configured' };
-    const { data, error } = await supabase
-      .from('fixed_expenses')
-      .insert({ ...entry, user_id: user.id })
-      .select()
-      .single();
+    const { data, error } = await supabase.from('fixed_expenses').insert({ ...entry, user_id: user.id }).select().single();
     if (!error) setFixedExpenses((prev) => [...prev, data].sort((a, b) => a.due_day - b.due_day));
     return { data, error };
   }
 
   async function updateFixedExpense(id, updates) {
     if (!supabase) return { error: 'Not configured' };
-    const { data, error } = await supabase
-      .from('fixed_expenses')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
+    const { data, error } = await supabase.from('fixed_expenses').update(updates).eq('id', id).select().single();
     if (!error) setFixedExpenses((prev) => prev.map((e) => (e.id === id ? data : e)));
     return { data, error };
   }
@@ -175,23 +164,14 @@ export function FinanceProvider({ children }) {
 
   async function addVariableExpense(entry) {
     if (!supabase) return { error: 'Not configured' };
-    const { data, error } = await supabase
-      .from('variable_expenses')
-      .insert({ ...entry, user_id: user.id })
-      .select()
-      .single();
+    const { data, error } = await supabase.from('variable_expenses').insert({ ...entry, user_id: user.id }).select().single();
     if (!error) setVariableExpenses((prev) => [...prev, data]);
     return { data, error };
   }
 
   async function updateVariableExpense(id, updates) {
     if (!supabase) return { error: 'Not configured' };
-    const { data, error } = await supabase
-      .from('variable_expenses')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
+    const { data, error } = await supabase.from('variable_expenses').update(updates).eq('id', id).select().single();
     if (!error) setVariableExpenses((prev) => prev.map((e) => (e.id === id ? data : e)));
     return { data, error };
   }
@@ -205,23 +185,14 @@ export function FinanceProvider({ children }) {
 
   async function addCard(entry) {
     if (!supabase) return { error: 'Not configured' };
-    const { data, error } = await supabase
-      .from('cards')
-      .insert({ ...entry, user_id: user.id })
-      .select()
-      .single();
+    const { data, error } = await supabase.from('cards').insert({ ...entry, user_id: user.id }).select().single();
     if (!error) setCards((prev) => [...prev, data]);
     return { data, error };
   }
 
   async function updateCard(id, updates) {
     if (!supabase) return { error: 'Not configured' };
-    const { data, error } = await supabase
-      .from('cards')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
+    const { data, error } = await supabase.from('cards').update(updates).eq('id', id).select().single();
     if (!error) setCards((prev) => prev.map((e) => (e.id === id ? data : e)));
     return { data, error };
   }
@@ -235,23 +206,14 @@ export function FinanceProvider({ children }) {
 
   async function addCardBill(entry) {
     if (!supabase) return { error: 'Not configured' };
-    const { data, error } = await supabase
-      .from('credit_card_bills')
-      .insert({ ...entry, user_id: user.id })
-      .select()
-      .single();
+    const { data, error } = await supabase.from('credit_card_bills').insert({ ...entry, user_id: user.id }).select().single();
     if (!error) setCardBills((prev) => [...prev, data]);
     return { data, error };
   }
 
   async function updateCardBill(id, updates) {
     if (!supabase) return { error: 'Not configured' };
-    const { data, error } = await supabase
-      .from('credit_card_bills')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
+    const { data, error } = await supabase.from('credit_card_bills').update(updates).eq('id', id).select().single();
     if (!error) setCardBills((prev) => prev.map((e) => (e.id === id ? data : e)));
     return { data, error };
   }
@@ -265,11 +227,7 @@ export function FinanceProvider({ children }) {
 
   async function addTransaction(entry) {
     if (!supabase) return { error: 'Not configured' };
-    const { data, error } = await supabase
-      .from('daily_transactions')
-      .insert({ ...entry, user_id: user.id })
-      .select()
-      .single();
+    const { data, error } = await supabase.from('daily_transactions').insert({ ...entry, user_id: user.id }).select().single();
     if (!error) setTransactions((prev) => [...prev, data]);
     return { data, error };
   }
@@ -283,86 +241,38 @@ export function FinanceProvider({ children }) {
 
   async function toggleVerifiedDay(dateStr) {
     if (!supabase) return { error: 'Not configured' };
-
-    const existing = verifiedDays.find(d => d.date === dateStr);
-
+    const existing = verifiedDays.find((d) => d.date === dateStr);
     if (existing) {
       const { error } = await supabase.from('verified_days').delete().eq('id', existing.id);
-      if (!error) setVerifiedDays(prev => prev.filter(d => d.id !== existing.id));
+      if (!error) setVerifiedDays((prev) => prev.filter((d) => d.id !== existing.id));
       return { error, newState: false };
     } else {
-      const { data, error } = await supabase
-        .from('verified_days')
-        .insert({ date: dateStr, user_id: user.id })
-        .select()
-        .single();
-      if (!error) setVerifiedDays(prev => [...prev, data]);
+      const { data, error } = await supabase.from('verified_days').insert({ date: dateStr, user_id: user.id }).select().single();
+      if (!error) setVerifiedDays((prev) => [...prev, data]);
       return { data, error, newState: true };
     }
   }
 
-  // --- Forecast Calculation ---
+  // --- Forecast ---
 
   const getMonthForecast = useCallback(
     (year, month) => {
       if (!profile) return { forecast: [], summary: {} };
-
       const startYear = new Date().getFullYear();
-      const startMonth = 0;
       let balance = Number(profile.initial_balance || 0);
-
       const targetMonthIndex = (year - startYear) * 12 + month;
 
       for (let i = 0; i < targetMonthIndex; i++) {
-        let m = startMonth + i;
-        let y = startYear + Math.floor(m / 12);
-        m = m % 12;
-
-        const monthTxns = transactions.filter((t) => {
-          const d = new Date(t.date);
-          return d.getFullYear() === y && d.getMonth() === m;
-        });
-
-        const forecast = generateMonthForecast({
-          year: y,
-          month: m,
-          initialBalance: balance,
-          incomeEntries,
-          fixedExpenses,
-          variableExpenses,
-          cards,
-          cardBills,
-          verifiedDays,
-          transactions: monthTxns,
-          showDailyForecast: profile.show_daily_forecast !== false,
-          cycleStartDay: profile.cycle_start_day || 1,
-        });
-
+        let m = i % 12;
+        let y = startYear + Math.floor(i / 12);
+        const monthTxns = transactions.filter((t) => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === m; });
+        const forecast = generateMonthForecast({ year: y, month: m, initialBalance: balance, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays, transactions: monthTxns, showDailyForecast: profile.show_daily_forecast !== false, cycleStartDay: profile.cycle_start_day || 1 });
         balance = forecast[forecast.length - 1]?.balance || 0;
       }
 
-      const monthTxns = transactions.filter((t) => {
-        const d = new Date(t.date);
-        return d.getFullYear() === year && d.getMonth() === month;
-      });
-
-      const forecast = generateMonthForecast({
-        year,
-        month,
-        initialBalance: balance,
-        incomeEntries,
-        fixedExpenses,
-        variableExpenses,
-        cards,
-        cardBills,
-        verifiedDays,
-        transactions: monthTxns,
-        showDailyForecast: profile.show_daily_forecast !== false,
-        cycleStartDay: profile.cycle_start_day || 1,
-      });
-
+      const monthTxns = transactions.filter((t) => { const d = new Date(t.date); return d.getFullYear() === year && d.getMonth() === month; });
+      const forecast = generateMonthForecast({ year, month, initialBalance: balance, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays, transactions: monthTxns, showDailyForecast: profile.show_daily_forecast !== false, cycleStartDay: profile.cycle_start_day || 1 });
       const summary = calculateMonthlySummary(forecast);
-
       return { forecast, summary, initialBalance: balance };
     },
     [profile, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays, transactions]
@@ -370,9 +280,7 @@ export function FinanceProvider({ children }) {
 
   const getMultiMonthForecastFn = useCallback(
     (startYear, startMonth, numMonths = 6) => {
-      // Find initial balance exactly like getMonthForecast
       if (!profile) return [];
-
       const startOfHistoryYear = new Date().getFullYear();
       let balance = Number(profile.initial_balance || 0);
       const targetMonthIndex = (startYear - startOfHistoryYear) * 12 + startMonth;
@@ -380,80 +288,31 @@ export function FinanceProvider({ children }) {
       for (let i = 0; i < targetMonthIndex; i++) {
         let m = i % 12;
         let y = startOfHistoryYear + Math.floor(i / 12);
-
-        const monthTxns = transactions.filter((t) => {
-          const d = new Date(t.date);
-          return d.getFullYear() === y && d.getMonth() === m;
-        });
-
-        const forecast = generateMonthForecast({
-          year: y, month: m, initialBalance: balance,
-          incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays,
-          transactions: monthTxns,
-          showDailyForecast: profile.show_daily_forecast !== false,
-          cycleStartDay: profile.cycle_start_day || 1,
-        });
-
+        const monthTxns = transactions.filter((t) => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === m; });
+        const forecast = generateMonthForecast({ year: y, month: m, initialBalance: balance, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays, transactions: monthTxns, showDailyForecast: profile.show_daily_forecast !== false, cycleStartDay: profile.cycle_start_day || 1 });
         balance = forecast[forecast.length - 1]?.balance || 0;
       }
 
-      // Now generate N months forward
       const allMonths = [];
       let currentBalance = balance;
       for (let i = 0; i < numMonths; i++) {
         let m = (startMonth + i) % 12;
         let y = startYear + Math.floor((startMonth + i) / 12);
-
-        const monthTxns = transactions.filter((t) => {
-          const d = new Date(t.date);
-          return d.getFullYear() === y && d.getMonth() === m;
-        });
-
-        const forecast = generateMonthForecast({
-          year: y, month: m, initialBalance: currentBalance,
-          incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays,
-          transactions: monthTxns,
-          showDailyForecast: profile.show_daily_forecast !== false,
-          cycleStartDay: profile.cycle_start_day || 1,
-        });
-
+        const monthTxns = transactions.filter((t) => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === m; });
+        const forecast = generateMonthForecast({ year: y, month: m, initialBalance: currentBalance, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays, transactions: monthTxns, showDailyForecast: profile.show_daily_forecast !== false, cycleStartDay: profile.cycle_start_day || 1 });
         const summary = calculateMonthlySummary(forecast);
-
-        allMonths.push({
-          year: y, month: m, forecast, summary, initialBalance: currentBalance
-        });
-
+        allMonths.push({ year: y, month: m, forecast, summary, initialBalance: currentBalance });
         currentBalance = forecast[forecast.length - 1]?.balance || 0;
       }
-
       return allMonths;
     },
     [profile, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays, transactions]
   );
 
-  // Navigation
-  function goToNextMonth() {
-    if (viewMonth === 11) {
-      setViewMonth(0);
-      setViewYear((y) => y + 1);
-    } else {
-      setViewMonth((m) => m + 1);
-    }
-  }
-
-  function goToPrevMonth() {
-    if (viewMonth === 0) {
-      setViewMonth(11);
-      setViewYear((y) => y - 1);
-    } else {
-      setViewMonth((m) => m - 1);
-    }
-  }
-
-  function goToCurrentMonth() {
-    setViewMonth(new Date().getMonth());
-    setViewYear(new Date().getFullYear());
-  }
+  // --- Navigation ---
+  function goToNextMonth() { viewMonth === 11 ? (setViewMonth(0), setViewYear((y) => y + 1)) : setViewMonth((m) => m + 1); }
+  function goToPrevMonth() { viewMonth === 0 ? (setViewMonth(11), setViewYear((y) => y - 1)) : setViewMonth((m) => m - 1); }
+  function goToCurrentMonth() { setViewMonth(new Date().getMonth()); setViewYear(new Date().getFullYear()); }
 
   async function refetchVariableExpenses() {
     if (!supabase) return;
@@ -466,36 +325,29 @@ export function FinanceProvider({ children }) {
     addIncomeEntry, updateIncomeEntry, deleteIncomeEntry,
     addFixedExpense, updateFixedExpense, deleteFixedExpense,
     addVariableExpense, updateVariableExpense, deleteVariableExpense,
-    addCard, deleteCard,
+    addCard, updateCard, deleteCard,
     addCardBill, updateCardBill, deleteCardBill,
     addTransaction, deleteTransaction,
     toggleVerifiedDay,
     getMonthForecast,
     getMultiMonthForecast: getMultiMonthForecastFn,
     isQuickAddOpen, setQuickAddOpen,
-    viewMonth, viewYear,
-    setViewMonth, setViewYear,
+    viewMonth, viewYear, setViewMonth, setViewYear,
     goToNextMonth, goToPrevMonth, goToCurrentMonth,
     refetchVariableExpenses,
-    refetch: fetchAllData,
+    refetch: () => fetchAllData({ force: true }), // ← force: true para uso manual
   };
 
   return (
     <FinanceContext.Provider value={value}>
       {children}
-      <QuickAddModal
-        isOpen={isQuickAddOpen}
-        onClose={() => setQuickAddOpen(false)}
-        initialType="diario"
-      />
+      <QuickAddModal isOpen={isQuickAddOpen} onClose={() => setQuickAddOpen(false)} initialType="diario" />
     </FinanceContext.Provider>
   );
 }
 
 export function useFinance() {
   const context = useContext(FinanceContext);
-  if (!context) {
-    throw new Error('useFinance must be used within a FinanceProvider');
-  }
+  if (!context) throw new Error('useFinance must be used within a FinanceProvider');
   return context;
 }

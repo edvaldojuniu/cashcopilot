@@ -9,7 +9,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [configured, setConfigured] = useState(!!supabase);
+  const [configured] = useState(!!supabase);
 
   useEffect(() => {
     if (!supabase) {
@@ -19,16 +19,13 @@ export function AuthProvider({ children }) {
 
     let isMounted = true;
 
-    // Safety timeout: stop loading after 5 seconds no matter what
     const fallbackTimeout = setTimeout(() => {
       if (isMounted) setLoading(false);
     }, 5000);
 
-    // Get initial session
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (!isMounted) return;
-      if (error) console.error("getSession error:", error);
-
+      if (error) console.error('getSession error:', error);
       setUser(session?.user || null);
       if (session?.user) {
         fetchProfile(session.user.id);
@@ -36,11 +33,10 @@ export function AuthProvider({ children }) {
         setLoading(false);
       }
     }).catch(err => {
-      console.error("getSession failed completely:", err);
+      console.error('getSession failed:', err);
       if (isMounted) setLoading(false);
     });
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         if (!isMounted) return;
@@ -71,7 +67,6 @@ export function AuthProvider({ children }) {
         .single();
 
       if (error && error.code === 'PGRST116') {
-        // Profile doesn't exist yet, create it
         const { data: newProfile } = await supabase
           .from('profiles')
           .insert({ id: userId, name: '', initial_balance: 0 })
@@ -96,10 +91,7 @@ export function AuthProvider({ children }) {
       .eq('id', user.id)
       .select()
       .single();
-
-    if (!error) {
-      setProfile(data);
-    }
+    if (!error) setProfile(data);
     return { data, error };
   }
 
@@ -108,30 +100,27 @@ export function AuthProvider({ children }) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        data: { name },
-      },
+      options: { data: { name } },
     });
     return { data, error };
   }
 
   async function signIn(email, password) {
     if (!supabase) return { error: { message: 'Supabase não configurado' } };
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     return { data, error };
   }
 
+  // ✅ CORRIGIDO: signOut limpo, sem navegação forçada
+  // Quem navega é o handleLogout na página
   async function signOut() {
     try {
       if (supabase) await supabase.auth.signOut();
     } catch (err) {
-      console.error('Error signing out', err);
+      console.error('Error signing out:', err);
     } finally {
-      // Force hard reset — clears React state AND Supabase session cache
-      window.location.href = '/';
+      setUser(null);
+      setProfile(null);
     }
   }
 
@@ -153,8 +142,6 @@ export function AuthProvider({ children }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 }
