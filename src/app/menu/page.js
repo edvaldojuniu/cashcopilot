@@ -15,19 +15,19 @@ export default function MenuPage() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   async function handleLogout() {
-    if (isLoggingOut) return; // ← bloqueia cliques duplos
+    if (isLoggingOut) return;
     setIsLoggingOut(true);
 
-    console.log('1. handleLogout chamado');
     try {
-      await signOut();
-      console.log('3. signOut executou');
+      // Timeout de 4s no total — se travar, redireciona mesmo assim
+      await Promise.race([
+        signOut(),
+        new Promise((resolve) => setTimeout(resolve, 4000)),
+      ]);
     } catch (e) {
-      console.error('3. signOut deu erro:', e);
-      setIsLoggingOut(false); // ← libera só em caso de erro
+      console.error(e);
     }
 
-    console.log('4. indo para /');
     router.push('/');
     router.refresh();
   }

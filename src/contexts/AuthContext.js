@@ -113,11 +113,19 @@ export function AuthProvider({ children }) {
 
   async function signOut() {
     try {
-      if (supabase) await supabase.auth.signOut();
+      if (supabase) {
+        // Timeout de 3s — se o Supabase não responder, continua mesmo assim
+        await Promise.race([
+          supabase.auth.signOut(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('signOut timeout')), 3000)
+          ),
+        ]);
+      }
     } catch (err) {
-      console.error('Error signing out:', err);
+      console.error('Error signing out (continuando mesmo assim):', err);
+      // ← NÃO relança o erro — o finally sempre executa
     } finally {
-      // Limpa cache do localStorage ao sair
       if (user?.id) {
         try { localStorage.removeItem(`cc_finance_${user.id}_v1`); } catch (e) { }
       }
