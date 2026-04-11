@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
 const AuthContext = createContext(null);
@@ -8,40 +8,50 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
+  // Starts as true — remains true until the first auth event is processed.
+  // This prevents any route guard from acting before Supabase has resolved
+  // the stored session on a hard refresh.
   const [loading, setLoading] = useState(true);
   const [configured] = useState(!!supabase);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
+    isMountedRef.current = true;
+
     if (!supabase) {
       setLoading(false);
       return;
     }
 
-    let isMounted = true;
-    let initialSessionHandled = false;
+    // Safety valve — if onAuthStateChange never fires (e.g. network issues)
+    // we still unblock the UI after 6 s.
+    const fallback = setTimeout(() => {
+      if (isMountedRef.current) setLoading(false);
+    }, 6000);
 
-    const fallbackTimeout = setTimeout(() => {
-      if (isMounted) setLoading(false);
-    }, 5000);
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!isMountedRef.current) return;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        if (!isMounted) return;
-        console.log('onAuthStateChange:', _event, session?.user?.email); // ← ADICIONE
-        setUser(session?.user || null);
-        if (session?.user) {
-          await fetchProfile(session.user.id);
-        } else {
-          setProfile(null);
-          setLoading(false);
-        }
-        initialSessionHandled = true;
+      console.log('[Auth]', event, session?.user?.email ?? 'no user');
+
+      const nextUser = session?.user ?? null;
+      setUser(nextUser);
+
+      if (nextUser) {
+        await fetchProfile(nextUser.id);
+      } else {
+        setProfile(null);
+        setLoading(false);
       }
-    );
+
+      clearTimeout(fallback);
+    });
 
     return () => {
-      isMounted = false;
-      clearTimeout(fallbackTimeout);
+      isMountedRef.current = false;
+      clearTimeout(fallback);
       subscription.unsubscribe();
     };
   }, []);
@@ -55,20 +65,23 @@ export function AuthProvider({ children }) {
         .eq('id', userId)
         .single();
 
+      if (!isMountedRef.current) return;
+
       if (error && error.code === 'PGRST116') {
+        // Profile doesn't exist yet — create it
         const { data: newProfile } = await supabase
           .from('profiles')
           .insert({ id: userId, name: '', initial_balance: 0 })
           .select()
           .single();
-        setProfile(newProfile);
+        if (isMountedRef.current) setProfile(newProfile);
       } else {
         setProfile(data);
       }
     } catch (err) {
-      console.error('Error fetching profile:', err);
+      console.error('[Auth] fetchProfile error:', err);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
   }
 
@@ -96,26 +109,38 @@ export function AuthProvider({ children }) {
 
   async function signIn(email, password) {
     if (!supabase) return { error: { message: 'Supabase não configurado' } };
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
     return { data, error };
   }
 
   async function signOut() {
-    // Limpa o estado IMEDIATAMENTE — não espera o Supabase
+    if (!supabase) return;
+
+    // 1. Clear the finance cache BEFORE signing out so the next login
+    //    doesn't accidentally serve stale data from a different session.
+    if (user?.id) {
+      try {
+        localStorage.removeItem(`cc_finance_${user.id}_v1`);
+      } catch (_) { }
+    }
+
+    // 2. Await the Supabase sign-out so the session cookie / localStorage
+    //    token are wiped BEFORE the caller redirects.  Without this await
+    //    a hard-refresh after navigation would find the token still alive
+    //    and re-authenticate the user silently.
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('[Auth] signOut error:', err);
+    }
+
+    // 3. Clear React state (onAuthStateChange fires SIGNED_OUT and does
+    //    the same, but doing it here too is instant feedback for the UI).
     setUser(null);
     setProfile(null);
-
-    // Limpa o cache financeiro
-    if (user?.id) {
-      try { localStorage.removeItem(`cc_finance_${user.id}_v1`); } catch (e) { }
-    }
-
-    // Tenta fazer o signOut no Supabase em background (sem bloquear)
-    if (supabase) {
-      supabase.auth.signOut().catch(err => {
-        console.warn('signOut background error (ignorado):', err);
-      });
-    }
   }
 
   const value = {
@@ -128,10 +153,13 @@ export function AuthProvider({ children }) {
     signOut,
     updateProfile,
     isAuthenticated: !!user,
-    isOnboarded: profile?.initial_balance != null && profile?.initial_balance !== 0,
+    isOnboarded:
+      profile?.initial_balance != null && profile?.initial_balance !== 0,
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  );
 }
 
 export function useAuth() {
