@@ -81,7 +81,7 @@ export default function DayRow({ data, maxBalance, filter, onToggleVerify }) {
             {displayItems.map((item, idx) => (
               <div key={idx} className={styles.typeCellItem}>
                 {item.icon}
-                <span className={`${styles.value} ${item.value === 0 ? styles.zero : ''} ${isFuture && !isToday ? styles.forecast : ''} ${item.class}`}>
+                <span className={`${styles.value} ${item.value === 0 ? styles.zero : ''} ${isFuture && !isToday ? styles.forecast : ''}`}>
                   {formatCurrency(item.value)}
                 </span>
               </div>
