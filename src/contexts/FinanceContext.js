@@ -124,9 +124,26 @@ export function FinanceProvider({ children }) {
   }, [user]);
 
   useEffect(() => {
-    console.log('FinanceContext useEffect:', { authLoading, userId: user?.id }); // ← ADICIONE
+    console.log('FinanceContext useEffect:', { authLoading, userId: user?.id });
     if (authLoading) return;
-    // ... resto igual
+
+    if (!supabase || !user) {
+      // Pequeno delay antes de resetar — evita resetar durante transição INITIAL_SESSION → SIGNED_IN
+      const resetTimer = setTimeout(() => {
+        resetState();
+      }, 300);
+      return () => clearTimeout(resetTimer);
+    }
+
+    const cached = loadFromCache(user.id);
+    if (cached) {
+      applyData(cached);
+      setLoading(false);
+      const timer = setTimeout(() => fetchAllData({ silent: true }), 1000);
+      return () => clearTimeout(timer);
+    } else {
+      fetchAllData({ silent: false });
+    }
   }, [user, authLoading, fetchAllData]);
 
   useEffect(() => {
