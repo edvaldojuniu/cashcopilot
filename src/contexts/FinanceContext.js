@@ -46,11 +46,10 @@ export function FinanceProvider({ children }) {
   const fetchAllData = useCallback(async ({ force = false } = {}) => {
     if (!supabase || !user) return;
 
-    // Se não forçado, respeita o throttle — não rebusca se foi recente
     const now = Date.now();
-    if (!force && now - lastFetchRef.current < REFETCH_THROTTLE_MS) return;
+    if (!force && now - lastFetchRef.current < REFETCH_THROTTLE_MS) return; // ← sai ANTES do setLoading
 
-    setLoading(true);
+    setLoading(true); // ← só aqui, depois da checagem
     const fallbackTimeout = setTimeout(() => setLoading(false), 10000);
 
     try {
