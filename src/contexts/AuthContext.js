@@ -18,24 +18,11 @@ export function AuthProvider({ children }) {
     }
 
     let isMounted = true;
+    let initialSessionHandled = false;
 
     const fallbackTimeout = setTimeout(() => {
       if (isMounted) setLoading(false);
     }, 5000);
-
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      if (!isMounted) return;
-      if (error) console.error('getSession error:', error);
-      setUser(session?.user || null);
-      if (session?.user) {
-        fetchProfile(session.user.id);
-      } else {
-        setLoading(false);
-      }
-    }).catch(err => {
-      console.error('getSession failed:', err);
-      if (isMounted) setLoading(false);
-    });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
@@ -48,6 +35,7 @@ export function AuthProvider({ children }) {
           setProfile(null);
           setLoading(false);
         }
+        initialSessionHandled = true;
       }
     );
 
