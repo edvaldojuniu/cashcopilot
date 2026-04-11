@@ -112,24 +112,20 @@ export function AuthProvider({ children }) {
   }
 
   async function signOut() {
-    try {
-      if (supabase) {
-        await Promise.race([
-          supabase.auth.signOut(),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('signOut timeout')), 3000)
-          ),
-        ]);
-      }
-    } catch (err) {
-      console.error('Error signing out (continuando mesmo assim):', err);
-    } finally {
-      if (user?.id) {
-        try { localStorage.removeItem(`cc_finance_${user.id}_v1`); } catch (e) { }
-      }
-      // ← REMOVA o resetSupabaseClient() daqui
-      // O onAuthStateChange já vai setar user=null automaticamente
-      // resetSupabaseClient() quebra o listener
+    // Limpa o estado IMEDIATAMENTE — não espera o Supabase
+    setUser(null);
+    setProfile(null);
+
+    // Limpa o cache financeiro
+    if (user?.id) {
+      try { localStorage.removeItem(`cc_finance_${user.id}_v1`); } catch (e) { }
+    }
+
+    // Tenta fazer o signOut no Supabase em background (sem bloquear)
+    if (supabase) {
+      supabase.auth.signOut().catch(err => {
+        console.warn('signOut background error (ignorado):', err);
+      });
     }
   }
 

@@ -17,19 +17,8 @@ export default function MenuPage() {
   async function handleLogout() {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
-
-    try {
-      // Timeout de 4s no total — se travar, redireciona mesmo assim
-      await Promise.race([
-        signOut(),
-        new Promise((resolve) => setTimeout(resolve, 4000)),
-      ]);
-    } catch (e) {
-      console.error(e);
-    }
-
+    await signOut(); // agora é instantâneo
     router.push('/');
-    router.refresh();
   }
 
   return (
