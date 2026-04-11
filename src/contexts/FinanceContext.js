@@ -77,7 +77,7 @@ export function FinanceProvider({ children }) {
       console.warn('fetchAllData: timeout atingido');
       isFetchingRef.current = false; // ← libera no timeout também
       setLoading(false);
-    }, 5000);
+    }, 8000);
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -126,7 +126,7 @@ export function FinanceProvider({ children }) {
   useEffect(() => {
     if (authLoading) return;
 
-    if (!user || !supabase) {
+    if (!supabase || !user) {
       resetState();
       return;
     }
@@ -135,7 +135,8 @@ export function FinanceProvider({ children }) {
     if (cached) {
       applyData(cached);
       setLoading(false);
-      setTimeout(() => fetchAllData({ silent: true }), 500);
+      const timer = setTimeout(() => fetchAllData({ silent: true }), 1000);
+      return () => clearTimeout(timer); // ← limpa o timer se o componente desmontar
     } else {
       fetchAllData({ silent: false });
     }
