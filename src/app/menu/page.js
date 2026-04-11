@@ -11,16 +11,21 @@ export default function MenuPage() {
   const { user, profile, signOut } = useAuth();
   console.log('signOut type:', typeof signOut);
   const { theme, toggleTheme } = useTheme();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   async function handleLogout() {
+    if (isLoggingOut) return; // ← bloqueia cliques duplos
+    setIsLoggingOut(true);
+
     console.log('1. handleLogout chamado');
-    console.log('2. signOut é:', typeof signOut, signOut);
     try {
       await signOut();
       console.log('3. signOut executou');
     } catch (e) {
       console.error('3. signOut deu erro:', e);
+      setIsLoggingOut(false); // ← libera só em caso de erro
     }
+
     console.log('4. indo para /');
     router.push('/');
     router.refresh();
@@ -69,8 +74,13 @@ export default function MenuPage() {
         </div>
 
         {/* Logout */}
-        <button className={`btn btn-danger btn-full ${styles.logoutBtn}`} onClick={handleLogout} id="btn-logout">
-          Sair da Conta
+        <button
+          className={`btn btn-danger btn-full ${styles.logoutBtn}`}
+          onClick={handleLogout}
+          disabled={isLoggingOut} // ← desabilita após primeiro clique
+          id="btn-logout"
+        >
+          {isLoggingOut ? 'Saindo...' : 'Sair da Conta'}
         </button>
       </div>
 
