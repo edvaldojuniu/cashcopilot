@@ -34,7 +34,7 @@ function clearCache(userId) {
 }
 
 export function FinanceProvider({ children }) {
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
 
   const [incomeEntries, setIncomeEntries] = useState([]);
   const [fixedExpenses, setFixedExpenses] = useState([]);
@@ -117,6 +117,8 @@ export function FinanceProvider({ children }) {
   // 1. Carrega cache instantaneamente (sem loading se tiver cache)
   // 2. Busca dados frescos em background silenciosamente
   useEffect(() => {
+    if (authLoading) return; // ← aguarda o Supabase resolver a sessão
+
     if (!user || !supabase) {
       resetState();
       return;
@@ -124,26 +126,25 @@ export function FinanceProvider({ children }) {
 
     const cached = loadFromCache(user.id);
     if (cached) {
-      applyData(cached);  // ← instantâneo, sem spinner
+      applyData(cached);
       setLoading(false);
-      fetchAllData({ silent: true }); // ← atualiza em background
+      fetchAllData({ silent: true });
     } else {
-      fetchAllData({ silent: false }); // ← primeira vez: mostra loading
+      fetchAllData({ silent: false });
     }
-  }, [user, fetchAllData]);
+  }, [user, authLoading, fetchAllData]);
 
   // SEM listeners de visibilitychange ou focus
   // Trocar de aba não faz nada — mostra o que está na memória
 
   // Auto-salva cache sempre que dados mudam (por CRUD)
   useEffect(() => {
-    if (!user || loading) return;
+    if (!user || loading || authLoading) return; // ← adiciona authLoading
     saveToCache(user.id, {
       incomeEntries, fixedExpenses, variableExpenses,
       cards, transactions, verifiedDays, cardBills,
     });
   }, [incomeEntries, fixedExpenses, variableExpenses, cards, transactions, verifiedDays, cardBills]);
-
   // --- CRUD Operations ---
 
   async function addIncomeEntry(entry) {

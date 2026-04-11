@@ -13,9 +13,17 @@ export default function MenuPage() {
   const { theme, toggleTheme } = useTheme();
 
   async function handleLogout() {
-    await signOut(); // AuthContext limpa user e profile
-    router.push('/'); // Navega para login
-    router.refresh(); // Invalida cache do Next.js
+    console.log('1. handleLogout chamado');
+    console.log('2. signOut é:', typeof signOut, signOut);
+    try {
+      await signOut();
+      console.log('3. signOut executou');
+    } catch (e) {
+      console.error('3. signOut deu erro:', e);
+    }
+    console.log('4. indo para /');
+    router.push('/');
+    router.refresh();
   }
 
   return (
