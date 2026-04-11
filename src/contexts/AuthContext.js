@@ -124,14 +124,12 @@ export function AuthProvider({ children }) {
     } catch (err) {
       console.error('Error signing out (continuando mesmo assim):', err);
     } finally {
-      // Limpa cache financeiro
       if (user?.id) {
         try { localStorage.removeItem(`cc_finance_${user.id}_v1`); } catch (e) { }
       }
-      // ✅ Recria o cliente Supabase — estado 100% limpo para próximo login
-      resetSupabaseClient();
-      setUser(null);
-      setProfile(null);
+      // ← REMOVA o resetSupabaseClient() daqui
+      // O onAuthStateChange já vai setar user=null automaticamente
+      // resetSupabaseClient() quebra o listener
     }
   }
 
