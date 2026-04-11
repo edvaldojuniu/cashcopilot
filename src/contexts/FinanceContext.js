@@ -124,22 +124,9 @@ export function FinanceProvider({ children }) {
   }, [user]);
 
   useEffect(() => {
+    console.log('FinanceContext useEffect:', { authLoading, userId: user?.id }); // ← ADICIONE
     if (authLoading) return;
-
-    if (!supabase || !user) {
-      resetState();
-      return;
-    }
-
-    const cached = loadFromCache(user.id);
-    if (cached) {
-      applyData(cached);
-      setLoading(false);
-      const timer = setTimeout(() => fetchAllData({ silent: true }), 1000);
-      return () => clearTimeout(timer); // ← limpa o timer se o componente desmontar
-    } else {
-      fetchAllData({ silent: false });
-    }
+    // ... resto igual
   }, [user, authLoading, fetchAllData]);
 
   useEffect(() => {

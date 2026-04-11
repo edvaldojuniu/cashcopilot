@@ -40,6 +40,7 @@ export function AuthProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         if (!isMounted) return;
+        console.log('onAuthStateChange:', _event, session?.user?.email); // ← ADICIONE
         setUser(session?.user || null);
         if (session?.user) {
           await fetchProfile(session.user.id);
