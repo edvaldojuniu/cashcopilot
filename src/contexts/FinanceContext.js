@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from './AuthContext';
 import { generateMonthForecast, calculateMonthlySummary } from '@/lib/engine';
@@ -8,9 +8,30 @@ import QuickAddModal from '@/components/QuickAddModal/QuickAddModal';
 
 const FinanceContext = createContext({});
 
-// Tempo mínimo entre refetches automáticos (30 segundos)
-// Evita rebuscar ao trocar de aba rapidamente sem mudança nos dados
-const REFETCH_THROTTLE_MS = 30 * 1000;
+// --- Cache helpers ---
+const CACHE_VERSION = 'v1';
+const getCacheKey = (userId) => `cc_finance_${userId}_${CACHE_VERSION}`;
+
+function saveToCache(userId, data) {
+  try {
+    localStorage.setItem(getCacheKey(userId), JSON.stringify(data));
+  } catch (e) { }
+}
+
+function loadFromCache(userId) {
+  try {
+    const raw = localStorage.getItem(getCacheKey(userId));
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function clearCache(userId) {
+  try {
+    localStorage.removeItem(getCacheKey(userId));
+  } catch (e) { }
+}
 
 export function FinanceProvider({ children }) {
   const { user, profile } = useAuth();
@@ -28,8 +49,15 @@ export function FinanceProvider({ children }) {
   const [viewMonth, setViewMonth] = useState(new Date().getMonth());
   const [viewYear, setViewYear] = useState(new Date().getFullYear());
 
-  // Timestamp do último fetch bem-sucedido
-  const lastFetchRef = useRef(0);
+  function applyData(data) {
+    setIncomeEntries(data.incomeEntries || []);
+    setFixedExpenses(data.fixedExpenses || []);
+    setVariableExpenses(data.variableExpenses || []);
+    setCards(data.cards || []);
+    setTransactions(data.transactions || []);
+    setVerifiedDays(data.verifiedDays || []);
+    setCardBills(data.cardBills || []);
+  }
 
   function resetState() {
     setIncomeEntries([]);
@@ -40,20 +68,17 @@ export function FinanceProvider({ children }) {
     setTransactions([]);
     setVerifiedDays([]);
     setLoading(false);
-    lastFetchRef.current = 0;
   }
 
-  const fetchAllData = useCallback(async ({ force = false } = {}) => {
+  // Busca dados do banco.
+  // silent=true → atualiza estado sem mostrar loading (background refresh)
+  // silent=false → mostra loading (primeira vez sem cache)
+  const fetchAllData = useCallback(async ({ silent = false } = {}) => {
     if (!supabase || !user) return;
-
-    const now = Date.now();
-    if (!force && now - lastFetchRef.current < REFETCH_THROTTLE_MS) return; // ← sai ANTES do setLoading
-
-    setLoading(true); // ← só aqui, depois da checagem
-    const fallbackTimeout = setTimeout(() => setLoading(false), 10000);
+    if (!silent) setLoading(true);
 
     try {
-      const queries = [
+      const results = await Promise.allSettled([
         supabase.from('income_entries').select('*').eq('user_id', user.id).order('due_day'),
         supabase.from('fixed_expenses').select('*').eq('user_id', user.id).order('due_day'),
         supabase.from('variable_expenses').select('*').eq('user_id', user.id).order('description'),
@@ -61,63 +86,65 @@ export function FinanceProvider({ children }) {
         supabase.from('daily_transactions').select('*').eq('user_id', user.id).order('date'),
         supabase.from('verified_days').select('*').eq('user_id', user.id),
         supabase.from('credit_card_bills').select('*').eq('user_id', user.id).order('due_day'),
-      ];
+      ]);
 
-      const results = await Promise.allSettled(queries);
-
-      const extract = (index) => {
-        const res = results[index];
-        if (res.status === 'fulfilled' && !res.value.error) return res.value.data || [];
-        if (res.status === 'fulfilled' && res.value.error)
-          console.warn(`Query ${index} failed:`, res.value.error.message);
+      const extract = (i) => {
+        const r = results[i];
+        if (r.status === 'fulfilled' && !r.value.error) return r.value.data || [];
         return [];
       };
 
-      setIncomeEntries(extract(0));
-      setFixedExpenses(extract(1));
-      setVariableExpenses(extract(2));
-      setCards(extract(3));
-      setTransactions(extract(4));
-      setVerifiedDays(extract(5));
-      setCardBills(extract(6));
+      const freshData = {
+        incomeEntries: extract(0),
+        fixedExpenses: extract(1),
+        variableExpenses: extract(2),
+        cards: extract(3),
+        transactions: extract(4),
+        verifiedDays: extract(5),
+        cardBills: extract(6),
+      };
 
-      // Registra o momento do fetch bem-sucedido
-      lastFetchRef.current = Date.now();
+      applyData(freshData);
+      saveToCache(user.id, freshData); // ← persiste para próxima abertura
     } catch (error) {
       console.error('Error fetching finance data:', error);
     } finally {
-      setLoading(false);
-      clearTimeout(fallbackTimeout);
+      if (!silent) setLoading(false);
     }
   }, [user]);
 
-  // ✅ Fetch forçado ao logar (user muda de null → objeto)
+  // Ao logar ou trocar de usuário:
+  // 1. Carrega cache instantaneamente (sem loading se tiver cache)
+  // 2. Busca dados frescos em background silenciosamente
   useEffect(() => {
-    if (user && supabase) {
-      fetchAllData({ force: true });
-    } else {
+    if (!user || !supabase) {
       resetState();
+      return;
+    }
+
+    const cached = loadFromCache(user.id);
+    if (cached) {
+      applyData(cached);  // ← instantâneo, sem spinner
+      setLoading(false);
+      fetchAllData({ silent: true }); // ← atualiza em background
+    } else {
+      fetchAllData({ silent: false }); // ← primeira vez: mostra loading
     }
   }, [user, fetchAllData]);
 
-  // ✅ Refetch inteligente ao voltar ao app/aba
-  // Só rebusca se passaram mais de 30s desde o último fetch
-  // Não irrita o usuário que troca de aba rapidamente
+  // SEM listeners de visibilitychange ou focus
+  // Trocar de aba não faz nada — mostra o que está na memória
+
+  // Auto-salva cache sempre que dados mudam (por CRUD)
   useEffect(() => {
-    if (!user || !supabase) return;
-
-    function handleVisibilityChange() {
-      if (document.visibilityState === 'visible') {
-        fetchAllData(); // throttle interno decide se vai ou não
-      }
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [user, fetchAllData]);
+    if (!user || loading) return;
+    saveToCache(user.id, {
+      incomeEntries, fixedExpenses, variableExpenses,
+      cards, transactions, verifiedDays, cardBills,
+    });
+  }, [incomeEntries, fixedExpenses, variableExpenses, cards, transactions, verifiedDays, cardBills]);
 
   // --- CRUD Operations ---
-  // Todos os CRUDs atualizam o state local imediatamente (sem rebuscar tudo)
 
   async function addIncomeEntry(entry) {
     if (!supabase) return { error: 'Not configured' };
@@ -262,8 +289,7 @@ export function FinanceProvider({ children }) {
       const targetMonthIndex = (year - startYear) * 12 + month;
 
       for (let i = 0; i < targetMonthIndex; i++) {
-        let m = i % 12;
-        let y = startYear + Math.floor(i / 12);
+        let m = i % 12, y = startYear + Math.floor(i / 12);
         const monthTxns = transactions.filter((t) => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === m; });
         const forecast = generateMonthForecast({ year: y, month: m, initialBalance: balance, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays, transactions: monthTxns, showDailyForecast: profile.show_daily_forecast !== false, cycleStartDay: profile.cycle_start_day || 1 });
         balance = forecast[forecast.length - 1]?.balance || 0;
@@ -271,8 +297,7 @@ export function FinanceProvider({ children }) {
 
       const monthTxns = transactions.filter((t) => { const d = new Date(t.date); return d.getFullYear() === year && d.getMonth() === month; });
       const forecast = generateMonthForecast({ year, month, initialBalance: balance, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays, transactions: monthTxns, showDailyForecast: profile.show_daily_forecast !== false, cycleStartDay: profile.cycle_start_day || 1 });
-      const summary = calculateMonthlySummary(forecast);
-      return { forecast, summary, initialBalance: balance };
+      return { forecast, summary: calculateMonthlySummary(forecast), initialBalance: balance };
     },
     [profile, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays, transactions]
   );
@@ -285,8 +310,7 @@ export function FinanceProvider({ children }) {
       const targetMonthIndex = (startYear - startOfHistoryYear) * 12 + startMonth;
 
       for (let i = 0; i < targetMonthIndex; i++) {
-        let m = i % 12;
-        let y = startOfHistoryYear + Math.floor(i / 12);
+        let m = i % 12, y = startOfHistoryYear + Math.floor(i / 12);
         const monthTxns = transactions.filter((t) => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === m; });
         const forecast = generateMonthForecast({ year: y, month: m, initialBalance: balance, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays, transactions: monthTxns, showDailyForecast: profile.show_daily_forecast !== false, cycleStartDay: profile.cycle_start_day || 1 });
         balance = forecast[forecast.length - 1]?.balance || 0;
@@ -295,12 +319,10 @@ export function FinanceProvider({ children }) {
       const allMonths = [];
       let currentBalance = balance;
       for (let i = 0; i < numMonths; i++) {
-        let m = (startMonth + i) % 12;
-        let y = startYear + Math.floor((startMonth + i) / 12);
+        let m = (startMonth + i) % 12, y = startYear + Math.floor((startMonth + i) / 12);
         const monthTxns = transactions.filter((t) => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === m; });
         const forecast = generateMonthForecast({ year: y, month: m, initialBalance: currentBalance, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays, transactions: monthTxns, showDailyForecast: profile.show_daily_forecast !== false, cycleStartDay: profile.cycle_start_day || 1 });
-        const summary = calculateMonthlySummary(forecast);
-        allMonths.push({ year: y, month: m, forecast, summary, initialBalance: currentBalance });
+        allMonths.push({ year: y, month: m, forecast, summary: calculateMonthlySummary(forecast), initialBalance: currentBalance });
         currentBalance = forecast[forecast.length - 1]?.balance || 0;
       }
       return allMonths;
@@ -334,7 +356,7 @@ export function FinanceProvider({ children }) {
     viewMonth, viewYear, setViewMonth, setViewYear,
     goToNextMonth, goToPrevMonth, goToCurrentMonth,
     refetchVariableExpenses,
-    refetch: () => fetchAllData({ force: true }), // ← force: true para uso manual
+    refetch: () => fetchAllData({ silent: false }), // força reload com loading
   };
 
   return (

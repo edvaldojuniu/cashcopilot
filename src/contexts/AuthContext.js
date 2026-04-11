@@ -111,14 +111,16 @@ export function AuthProvider({ children }) {
     return { data, error };
   }
 
-  // ✅ CORRIGIDO: signOut limpo, sem navegação forçada
-  // Quem navega é o handleLogout na página
   async function signOut() {
     try {
       if (supabase) await supabase.auth.signOut();
     } catch (err) {
       console.error('Error signing out:', err);
     } finally {
+      // Limpa cache do localStorage ao sair
+      if (user?.id) {
+        try { localStorage.removeItem(`cc_finance_${user.id}_v1`); } catch (e) { }
+      }
       setUser(null);
       setProfile(null);
     }
