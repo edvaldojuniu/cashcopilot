@@ -77,6 +77,12 @@ export function FinanceProvider({ children }) {
     if (!supabase || !user) return;
     if (!silent) setLoading(true);
 
+    // Timeout reduzido para 5s e garante que setLoading(false) sempre ocorra
+    const fallbackTimeout = setTimeout(() => {
+      console.warn('fetchAllData: timeout atingido');
+      setLoading(false);
+    }, 5000);
+
     try {
       const results = await Promise.allSettled([
         supabase.from('income_entries').select('*').eq('user_id', user.id).order('due_day'),
@@ -105,11 +111,12 @@ export function FinanceProvider({ children }) {
       };
 
       applyData(freshData);
-      saveToCache(user.id, freshData); // ← persiste para próxima abertura
+      saveToCache(user.id, freshData);
     } catch (error) {
-      console.error('Error fetching finance data:', error);
+      console.error('fetchAllData error:', error);
     } finally {
-      if (!silent) setLoading(false);
+      clearTimeout(fallbackTimeout); // ← cancela o fallback se terminou normal
+      setLoading(false);             // ← SEMPRE libera o loading
     }
   }, [user]);
 

@@ -3,23 +3,26 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-// During build time, Supabase credentials may not be available.
-// We create a dummy client that will be replaced at runtime.
 const isValidUrl = supabaseUrl && supabaseUrl.startsWith('http');
 
-export const supabase = isValidUrl
-  ? createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        autoRefreshToken: true,
-        persistSession: true,
-        detectSessionInUrl: true,
-      },
-    })
-  : null;
+function createSupabaseClient() {
+  if (!isValidUrl) return null;
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true,
+    },
+  });
+}
 
-/**
- * Get the Supabase client, throwing a helpful error if not configured
- */
+export let supabase = createSupabaseClient();
+
+// Chame após logout para garantir estado limpo na próxima sessão
+export function resetSupabaseClient() {
+  supabase = createSupabaseClient();
+}
+
 export function getSupabase() {
   if (!supabase) {
     throw new Error(
