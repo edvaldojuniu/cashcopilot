@@ -175,15 +175,33 @@ export function FinanceProvider({ children }) {
           cardBills: extract(6),
         };
 
-        // TESTE — remover depois
-        console.log('[Finance] fetch resultado:', {
-          incomeEntries: freshData.incomeEntries.length,
-          fixedExpenses: freshData.fixedExpenses.length,
-          variableExpenses: freshData.variableExpenses.length,
-          cards: freshData.cards.length,
-          transactions: freshData.transactions.length,
-          cardBills: freshData.cardBills.length,
-        });
+        // Safety guard: if every query came back empty it almost certainly
+        // means the Supabase session wasn't fully committed yet (a timing
+        // race on page refresh).  Don't overwrite good cached data with an
+        // empty result — just silently discard it and let the cache stand.
+        // This is safe because a genuine "user has zero records" state is
+        // extremely unlikely across ALL seven tables simultaneously.
+        const totalRecords =
+          freshData.incomeEntries.length +
+          freshData.fixedExpenses.length +
+          freshData.variableExpenses.length +
+          freshData.cards.length +
+          freshData.transactions.length +
+          freshData.verifiedDays.length +
+          freshData.cardBills.length;
+
+        const hasCachedData = !!loadFromCache(user.id);
+
+        if (totalRecords === 0 && hasCachedData) {
+          console.warn('[Finance] fetch returned all-empty — keeping cache to avoid blank screen');
+          // Retry once after a short delay so we don't permanently skip a
+          // refresh if the session was genuinely just a bit slow to settle.
+          setTimeout(() => {
+            isFetchingRef.current = false;
+            fetchAllData({ silent: true });
+          }, 1500);
+          return;
+        }
 
         applyData(freshData);
         saveToCache(user.id, freshData);
@@ -229,10 +247,14 @@ export function FinanceProvider({ children }) {
     const cached = loadFromCache(user.id);
     if (cached) {
       // Show cached data instantly, then reconcile with server in background.
+      // The 800 ms delay before the background fetch gives the Supabase JS
+      // client time to fully commit the restored session internally —
+      // firing queries immediately after onAuthStateChange can race with
+      // the client's internal token setter and return empty results.
       applyData(cached);
       loadedUserIdRef.current = user.id;
       setLoading(false);
-      fetchAllData({ silent: true });
+      setTimeout(() => fetchAllData({ silent: true }), 800);
     } else {
       // No cache — full blocking fetch.
       fetchAllData({ silent: false });
