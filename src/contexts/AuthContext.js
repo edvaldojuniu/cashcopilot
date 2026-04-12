@@ -127,14 +127,25 @@ export function AuthProvider({ children }) {
       } catch (_) { }
     }
 
-    // 2. Await the Supabase sign-out so the session cookie / localStorage
-    //    token are wiped BEFORE the caller redirects.  Without this await
-    //    a hard-refresh after navigation would find the token still alive
-    //    and re-authenticate the user silently.
+    // 2. Wipe the Supabase token from localStorage immediately — this is
+    //    synchronous and guarantees the session is gone before the redirect.
+    //    Then fire signOut() on the server but race it against a 3s timeout
+    //    so a slow/hanging RPC never blocks the UI.
     try {
-      await supabase.auth.signOut();
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith('sb-'))
+        .forEach((k) => localStorage.removeItem(k));
+    } catch (_) { }
+
+    try {
+      await Promise.race([
+        supabase.auth.signOut(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 3000)
+        ),
+      ]);
     } catch (err) {
-      console.warn('[Auth] signOut error:', err);
+      console.warn('[Auth] signOut (ignored):', err.message);
     }
 
     // 3. Clear React state (onAuthStateChange fires SIGNED_OUT and does

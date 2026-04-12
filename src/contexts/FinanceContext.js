@@ -114,14 +114,12 @@ export function FinanceProvider({ children }) {
       }, 8000);
 
       try {
-        // Verify the session is still alive before hitting the DB.
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (!session) {
-          console.warn('[Finance] No active session — aborting fetch');
-          return;
-        }
+        // NOTE: intentionally NOT calling getSession() here.
+        // Calling it inside onAuthStateChange callbacks (or code triggered
+        // by them) causes a deadlock in the Supabase JS client — the
+        // getSession promise never resolves, which is what caused the 8s
+        // timeout.  The user object from AuthContext already guarantees a
+        // valid session; no extra check needed.
 
         const results = await Promise.allSettled([
           supabase
