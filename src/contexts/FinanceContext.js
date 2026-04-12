@@ -175,6 +175,16 @@ export function FinanceProvider({ children }) {
           cardBills: extract(6),
         };
 
+        // TESTE — remover depois
+        console.log('[Finance] fetch resultado:', {
+          incomeEntries: freshData.incomeEntries.length,
+          fixedExpenses: freshData.fixedExpenses.length,
+          variableExpenses: freshData.variableExpenses.length,
+          cards: freshData.cards.length,
+          transactions: freshData.transactions.length,
+          cardBills: freshData.cardBills.length,
+        });
+
         applyData(freshData);
         saveToCache(user.id, freshData);
         loadedUserIdRef.current = user.id;
