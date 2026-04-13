@@ -47,7 +47,7 @@ function clearCache(userId) {
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function FinanceProvider({ children }) {
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading, sessionReady } = useAuth();
 
   const [incomeEntries, setIncomeEntries] = useState([]);
   const [fixedExpenses, setFixedExpenses] = useState([]);
@@ -194,12 +194,6 @@ export function FinanceProvider({ children }) {
 
         if (totalRecords === 0 && hasCachedData) {
           console.warn('[Finance] fetch returned all-empty — keeping cache to avoid blank screen');
-          // Retry once after a short delay so we don't permanently skip a
-          // refresh if the session was genuinely just a bit slow to settle.
-          setTimeout(() => {
-            isFetchingRef.current = false;
-            fetchAllData({ silent: true });
-          }, 1500);
           return;
         }
 
@@ -231,10 +225,15 @@ export function FinanceProvider({ children }) {
     if (authLoading) return;
 
     if (!user) {
-      // User signed out or no session — clear everything immediately.
+      // User signed out — clear immediately, no need to wait for sessionReady.
       clearData();
       return;
     }
+
+    // Wait for the Supabase client's internal auth lock to be released.
+    // sessionReady becomes true one JS tick after onAuthStateChange resolves,
+    // which is the earliest point where DB queries won't hang.
+    if (!sessionReady) return;
 
     // If we already have fresh data for this user in memory, just do a
     // silent background refresh (catches server-side changes from other devices).
@@ -247,19 +246,15 @@ export function FinanceProvider({ children }) {
     const cached = loadFromCache(user.id);
     if (cached) {
       // Show cached data instantly, then reconcile with server in background.
-      // The 800 ms delay before the background fetch gives the Supabase JS
-      // client time to fully commit the restored session internally —
-      // firing queries immediately after onAuthStateChange can race with
-      // the client's internal token setter and return empty results.
       applyData(cached);
       loadedUserIdRef.current = user.id;
       setLoading(false);
-      setTimeout(() => fetchAllData({ silent: true }), 800);
+      fetchAllData({ silent: true });
     } else {
       // No cache — full blocking fetch.
       fetchAllData({ silent: false });
     }
-  }, [user, authLoading]); // intentionally NOT including fetchAllData to avoid loops
+  }, [user, authLoading, sessionReady]); // intentionally NOT including fetchAllData to avoid loops
 
   // ─── Persist cache whenever state changes ─────────────────────────────────
 

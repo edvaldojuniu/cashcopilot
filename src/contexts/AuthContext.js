@@ -13,6 +13,10 @@ export function AuthProvider({ children }) {
   // the stored session on a hard refresh.
   const [loading, setLoading] = useState(true);
   const [configured] = useState(!!supabase);
+  // Becomes true one JS tick after onAuthStateChange resolves,
+  // ensuring the Supabase client has released its internal lock
+  // before FinanceContext starts firing DB queries.
+  const [sessionReady, setSessionReady] = useState(false);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -38,6 +42,7 @@ export function AuthProvider({ children }) {
 
       const nextUser = session?.user ?? null;
       setUser(nextUser);
+      setSessionReady(false); // reset while we process
 
       if (nextUser) {
         await fetchProfile(nextUser.id);
@@ -45,6 +50,15 @@ export function AuthProvider({ children }) {
         setProfile(null);
         setLoading(false);
       }
+
+      // Push sessionReady to the next event-loop tick.
+      // This guarantees that the Supabase client has fully released its
+      // internal auth lock before FinanceContext starts making DB queries.
+      // Queries that run inside the same tick as onAuthStateChange hang
+      // indefinitely because they queue behind the still-held lock.
+      setTimeout(() => {
+        if (isMountedRef.current) setSessionReady(!!nextUser);
+      }, 0);
 
       clearTimeout(fallback);
     });
@@ -159,6 +173,7 @@ export function AuthProvider({ children }) {
     profile,
     loading,
     configured,
+    sessionReady,
     signUp,
     signIn,
     signOut,
