@@ -126,30 +126,30 @@
    * to scroll to the last day of a column.
    * The 20px bottom padding = 8px scrollbar track + 12px breathing room.
    */
+  /*
+   * dayList: fills remaining height and reserves padding-bottom for the
+   * horizontal scrollbar. overflow:hidden clips only what exits the border
+   * box — the scrollbar sits inside the padding area so it stays visible.
+   */
   .dayList {
     flex: 1;
     min-height: 0;
-    display: flex;
-    flex-direction: column;
-    /* overflow must NOT be hidden here — it would clip the horizontal
-       scrollbar of .monthColumns, making it invisible. */
-    overflow: visible;
+    overflow: hidden;
+    /* space for the horizontal scrollbar + gap above the BottomNav */
+    padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 16px);
   }
 
   /* Outer container: scrolls HORIZONTALLY between month cards */
   .monthColumns {
-    flex: 1;
-    min-height: 0;
+    height: 100%;
     flex-direction: row;
     align-items: stretch;
-    overflow-x: auto;
+    overflow-x: scroll;
     overflow-y: hidden;
     gap: var(--space-md);
     padding: var(--space-sm) var(--space-md) 0;
     scroll-snap-type: x mandatory;
-    /* Always show the horizontal scrollbar so users know they can scroll */
     scrollbar-width: auto;
-    overflow-x: scroll;
   }
 
   /* Force scrollbar always visible on WebKit (Chrome/Safari) */
