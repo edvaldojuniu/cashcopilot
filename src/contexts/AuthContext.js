@@ -8,16 +8,21 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
-  // Starts as true — remains true until the first auth event is processed.
-  // This prevents any route guard from acting before Supabase has resolved
-  // the stored session on a hard refresh.
   const [loading, setLoading] = useState(true);
   const [configured] = useState(!!supabase);
-  // Becomes true one JS tick after onAuthStateChange resolves,
-  // ensuring the Supabase client has released its internal lock
-  // before FinanceContext starts firing DB queries.
+
+  // sessionReady becomes true one JS tick after onAuthStateChange fires.
+  // FinanceContext waits for this before making any DB queries, which
+  // prevents the Supabase internal auth-lock deadlock on page refresh.
   const [sessionReady, setSessionReady] = useState(false);
+
   const isMountedRef = useRef(true);
+
+  // ─── Auth state listener ─────────────────────────────────────────────────
+  // CRITICAL: zero Supabase queries (auth OR database) inside this callback.
+  // Every .from() and getSession() call acquires the same internal lock that
+  // onAuthStateChange holds — instant deadlock on page refresh.
+  // Only set React state here; DB work happens in the effects below.
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -27,40 +32,29 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    // Safety valve — if onAuthStateChange never fires (e.g. network issues)
-    // we still unblock the UI after 6 s.
     const fallback = setTimeout(() => {
       if (isMountedRef.current) setLoading(false);
     }, 6000);
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      // Intentionally synchronous — no await, no Supabase calls.
       if (!isMountedRef.current) return;
 
       console.log('[Auth]', event, session?.user?.email ?? 'no user');
 
       const nextUser = session?.user ?? null;
       setUser(nextUser);
-      setSessionReady(false); // reset while we process
+      setSessionReady(false);
 
-      if (nextUser) {
-        await fetchProfile(nextUser.id);
-      } else {
+      if (!nextUser) {
         setProfile(null);
         setLoading(false);
+        clearTimeout(fallback);
       }
-
-      // Push sessionReady to the next event-loop tick.
-      // This guarantees that the Supabase client has fully released its
-      // internal auth lock before FinanceContext starts making DB queries.
-      // Queries that run inside the same tick as onAuthStateChange hang
-      // indefinitely because they queue behind the still-held lock.
-      setTimeout(() => {
-        if (isMountedRef.current) setSessionReady(!!nextUser);
-      }, 0);
-
-      clearTimeout(fallback);
+      // If nextUser exists: loading stays true until fetchProfile completes
+      // (triggered by the effect below once sessionReady flips to true).
     });
 
     return () => {
@@ -69,6 +63,29 @@ export function AuthProvider({ children }) {
       subscription.unsubscribe();
     };
   }, []);
+
+  // ─── Session ready signal ────────────────────────────────────────────────
+  // Pushes sessionReady=true to the NEXT event-loop tick after user changes,
+  // giving the Supabase client time to release its internal auth lock.
+
+  useEffect(() => {
+    if (!user) {
+      setSessionReady(false);
+      return;
+    }
+    const t = setTimeout(() => {
+      if (isMountedRef.current) setSessionReady(true);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [user]);
+
+  // ─── Profile fetch ───────────────────────────────────────────────────────
+  // Runs only after sessionReady=true — safe to make DB queries here.
+
+  useEffect(() => {
+    if (!user || !sessionReady) return;
+    fetchProfile(user.id);
+  }, [user, sessionReady]);
 
   async function fetchProfile(userId) {
     if (!supabase) return;
@@ -82,7 +99,6 @@ export function AuthProvider({ children }) {
       if (!isMountedRef.current) return;
 
       if (error && error.code === 'PGRST116') {
-        // Profile doesn't exist yet — create it
         const { data: newProfile } = await supabase
           .from('profiles')
           .insert({ id: userId, name: '', initial_balance: 0 })
@@ -133,23 +149,17 @@ export function AuthProvider({ children }) {
   async function signOut() {
     if (!supabase) return;
 
-    // 1. Clear the finance cache BEFORE signing out so the next login
-    //    doesn't accidentally serve stale data from a different session.
     if (user?.id) {
-      try {
-        localStorage.removeItem(`cc_finance_${user.id}_v1`);
-      } catch (_) { }
+      try { localStorage.removeItem(`cc_finance_${user.id}_v1`); } catch (_) {}
     }
 
-    // 2. Wipe the Supabase token from localStorage immediately — this is
-    //    synchronous and guarantees the session is gone before the redirect.
-    //    Then fire signOut() on the server but race it against a 3s timeout
-    //    so a slow/hanging RPC never blocks the UI.
+    // Wipe the token synchronously so a hard-refresh after redirect
+    // won't find it and silently re-authenticate.
     try {
       Object.keys(localStorage)
         .filter((k) => k.startsWith('sb-'))
         .forEach((k) => localStorage.removeItem(k));
-    } catch (_) { }
+    } catch (_) {}
 
     try {
       await Promise.race([
@@ -162,10 +172,9 @@ export function AuthProvider({ children }) {
       console.warn('[Auth] signOut (ignored):', err.message);
     }
 
-    // 3. Clear React state (onAuthStateChange fires SIGNED_OUT and does
-    //    the same, but doing it here too is instant feedback for the UI).
     setUser(null);
     setProfile(null);
+    setSessionReady(false);
   }
 
   const value = {
