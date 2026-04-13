@@ -30,7 +30,9 @@
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Mobile: dayList is just normal flow - page itself scrolls */
@@ -49,8 +51,13 @@
 }
 
 @keyframes shimmer {
-  0%   { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .empty {
@@ -103,6 +110,7 @@
 
 /* ── Desktop panoramic layout (≥1024px) ── */
 @media (min-width: 1024px) {
+
   /* Lock page to viewport height, flex column */
   .page {
     height: 100dvh;
@@ -112,29 +120,41 @@
     padding-bottom: 0;
   }
 
-  /* dayList fills leftover height and hides its own overflow */
+  /*
+   * dayList: fills remaining height but reserves space at the bottom
+   * for the horizontal scrollbar so it's always visible without having
+   * to scroll to the last day of a column.
+   * The 20px bottom padding = 8px scrollbar track + 12px breathing room.
+   */
   .dayList {
     flex: 1;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
+    padding-bottom: 20px;
   }
 
-  /* Outer container: scroll HORIZONTALLY between month cards */
+  /* Outer container: scrolls HORIZONTALLY between month cards */
   .monthColumns {
+    flex: 1;
+    min-height: 0;
     flex-direction: row;
-    height: 100%;
     align-items: stretch;
     overflow-x: auto;
     overflow-y: hidden;
     gap: var(--space-md);
-    /* bottom padding gives room for the horizontal scrollbar */
-    padding: var(--space-sm) var(--space-md) 14px;
+    padding: var(--space-sm) var(--space-md) 0;
     scroll-snap-type: x mandatory;
-    scrollbar-width: auto;  /* keep it visible */
+    /* Always show the horizontal scrollbar so users know they can scroll */
+    scrollbar-width: auto;
+    overflow-x: scroll;
   }
 
+  /* Force scrollbar always visible on WebKit (Chrome/Safari) */
   .monthColumns::-webkit-scrollbar {
     height: 8px;
+    display: block;
   }
 
   .monthColumns::-webkit-scrollbar-track {
@@ -145,12 +165,17 @@
   .monthColumns::-webkit-scrollbar-thumb {
     background: var(--border-primary);
     border-radius: 6px;
+    min-width: 40px;
   }
 
-  /* Each month card - DOES NOT scroll, just clips */
+  .monthColumns::-webkit-scrollbar-thumb:hover {
+    background: var(--text-tertiary);
+  }
+
+  /* Each month card — fixed width, clips vertical overflow into columnBody */
   .monthColumn {
-    flex: 0 0 340px;
-    max-width: 340px;
+    flex: 0 0 300px;
+    max-width: 300px;
     height: 100%;
     display: flex;
     flex-direction: column;
@@ -176,12 +201,11 @@
     text-transform: capitalize;
   }
 
-  /* columnBody scrolls VERTICALLY — this is the key */
+  /* columnBody scrolls VERTICALLY inside each card */
   .columnBody {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    /* extra bottom padding so last row clears the BottomNav */
     padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 4px);
     scrollbar-width: thin;
   }

@@ -34,7 +34,8 @@ export default function HomePage() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const maxMonths = windowWidth >= 1024 ? 4 : 1;
+  // Desktop shows 12 months (full year ahead), mobile shows 1
+  const maxMonths = windowWidth >= 1024 ? 12 : 1;
 
   // Calculate forecast
   const { monthsData, summary } = useMemo(() => {
@@ -133,21 +134,22 @@ export default function HomePage() {
                   {mData.forecast.map((dayData) => {
                     const enhancedDayData = { ...dayData, onOpenInvoiceDetails: setSelectedInvoice };
                     return (
-                    <div key={dayData.dateStr || dayData.day} ref={dayData.isToday && index === 0 ? todayRef : null}>
-                      <div onClick={(e) => {
-                        if (!e.target.closest('circle') && !e.target.closest('svg')) {
-                           setSelectedDay(dayData.dateStr); 
-                        }
-                      }}>
-                        <DayRow
-                          data={enhancedDayData}
-                          maxBalance={maxBalance}
-                          filter={filter}
-                          onToggleVerify={() => toggleVerifiedDay(dayData.dateStr)}
-                        />
+                      <div key={dayData.dateStr || dayData.day} ref={dayData.isToday && index === 0 ? todayRef : null}>
+                        <div onClick={(e) => {
+                          if (!e.target.closest('circle') && !e.target.closest('svg')) {
+                            setSelectedDay(dayData.dateStr);
+                          }
+                        }}>
+                          <DayRow
+                            data={enhancedDayData}
+                            maxBalance={maxBalance}
+                            filter={filter}
+                            onToggleVerify={() => toggleVerifiedDay(dayData.dateStr)}
+                          />
+                        </div>
                       </div>
-                    </div>
-                  )})}
+                    )
+                  })}
                 </div>
               </div>
             ))}
@@ -155,10 +157,10 @@ export default function HomePage() {
         )}
       </div>
 
-      <DayDetailsModal 
-        isOpen={!!selectedDay} 
-        onClose={() => setSelectedDay(null)} 
-        dayData={selectedDay ? monthsData.flatMap(m => m.forecast).find(d => d.dateStr === selectedDay) : null} 
+      <DayDetailsModal
+        isOpen={!!selectedDay}
+        onClose={() => setSelectedDay(null)}
+        dayData={selectedDay ? monthsData.flatMap(m => m.forecast).find(d => d.dateStr === selectedDay) : null}
       />
 
       <InvoiceDetailsModal
