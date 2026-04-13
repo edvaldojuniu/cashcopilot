@@ -131,8 +131,9 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
-    padding-bottom: 20px;
+    /* overflow must NOT be hidden here — it would clip the horizontal
+       scrollbar of .monthColumns, making it invisible. */
+    overflow: visible;
   }
 
   /* Outer container: scrolls HORIZONTALLY between month cards */
