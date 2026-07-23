@@ -10,7 +10,7 @@ import FilterSelector from '@/components/FilterSelector/FilterSelector';
 import DayRow from '@/components/DayRow/DayRow';
 import DayDetailsModal from '@/components/DayDetailsModal/DayDetailsModal';
 import InvoiceDetailsModal from '@/components/InvoiceDetailsModal/InvoiceDetailsModal';
-import { formatCyclePeriodLabel } from '@/lib/utils';
+import { formatCyclePeriodLabel, filterToTransactionType } from '@/lib/utils';
 import styles from './page.module.css';
 
 export default function HomePage() {
@@ -159,6 +159,7 @@ export default function HomePage() {
         isOpen={!!selectedDay}
         onClose={() => setSelectedDay(null)}
         dayData={selectedDay ? monthsData.flatMap(m => m.forecast).find(d => d.dateStr === selectedDay) : null}
+        initialType={filterToTransactionType(filter)}
       />
 
       <InvoiceDetailsModal

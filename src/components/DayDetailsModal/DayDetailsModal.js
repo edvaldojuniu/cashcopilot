@@ -5,10 +5,13 @@ import { formatCurrency } from '@/lib/utils';
 import { useFinance } from '@/contexts/FinanceContext';
 import QuickAddModal from '../QuickAddModal/QuickAddModal';
 import { useState } from 'react';
+import { useBackButtonClose } from '@/hooks/useBackButtonClose';
 
-export default function DayDetailsModal({ isOpen, onClose, dayData }) {
+export default function DayDetailsModal({ isOpen, onClose, dayData, initialType = 'diario' }) {
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+
+  useBackButtonClose(isOpen, onClose);
 
   if (!isOpen || !dayData) return null;
 
@@ -206,6 +209,7 @@ export default function DayDetailsModal({ isOpen, onClose, dayData }) {
         isOpen={isQuickAddOpen}
         onClose={() => setIsQuickAddOpen(false)}
         defaultDate={dateStr}
+        initialType={initialType}
       />
 
       <QuickAddModal

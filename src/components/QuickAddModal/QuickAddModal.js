@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import styles from './QuickAddModal.module.css';
 import { useFinance } from '@/contexts/FinanceContext';
 import TagPicker from '@/components/TagPicker/TagPicker';
+import { useBackButtonClose } from '@/hooks/useBackButtonClose';
 
 export default function QuickAddModal({ isOpen, onClose, initialType = 'diario', editData = null, defaultDate = null }) {
   const {
@@ -12,6 +13,8 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
     deleteTransaction, deleteFixedExpense, deleteIncomeEntry,
     cards
   } = useFinance();
+
+  useBackButtonClose(isOpen, onClose);
 
   const [type, setType] = useState(initialType);
   const [description, setDescription] = useState('');

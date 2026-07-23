@@ -121,6 +121,24 @@ export function formatCyclePeriodLabel(year, month, cycleStartDay = 1) {
 }
 
 /**
+ * Mapeia a aba de filtro selecionada na tela principal (Entradas, Saídas,
+ * Diários, etc.) para o "type" inicial do formulário de novo lançamento —
+ * abas que não representam um único tipo (Diário+Cartão, Todas, ...) caem
+ * no padrão "diario".
+ */
+const FILTER_TO_TRANSACTION_TYPE = {
+  entradas: 'income',
+  saidas: 'expense',
+  diarios: 'diario',
+  economias: 'saving',
+  cartoes: 'card',
+};
+
+export function filterToTransactionType(filter) {
+  return FILTER_TO_TRANSACTION_TYPE[filter] || 'diario';
+}
+
+/**
  * Gera um ID único
  */
 export function generateId() {

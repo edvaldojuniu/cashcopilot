@@ -4,11 +4,14 @@ import { useState } from 'react';
 import styles from './InvoiceDetailsModal.module.css';
 import { formatCurrency } from '@/lib/utils';
 import { useFinance } from '@/contexts/FinanceContext';
+import { useBackButtonClose } from '@/hooks/useBackButtonClose';
 
 export default function InvoiceDetailsModal({ isOpen, onClose, invoice }) {
   const [payDate, setPayDate] = useState('');
   const { addTransaction } = useFinance();
   const [saving, setSaving] = useState(false);
+
+  useBackButtonClose(isOpen, onClose);
 
   if (!isOpen || !invoice) return null;
 

@@ -9,6 +9,15 @@ export function getDaysInMonth(year, month) {
 }
 
 /**
+ * Diferença em meses entre duas strings "YYYY-MM".
+ */
+function monthsBetweenYm(fromYm, toYm) {
+  const [fy, fm] = fromYm.split('-').map(Number);
+  const [ty, tm] = toYm.split('-').map(Number);
+  return (ty - fy) * 12 + (tm - fm);
+}
+
+/**
  * Calcula o valor diário disponível
  */
 export function calcDailyAmount(variableExpenses, daysInCycle) {
@@ -129,10 +138,19 @@ export function generateMonthForecast({
               const checkMonthStr = `${currYear}-${String(currMonth + 1).padStart(2, '0')}`;
               if (cb.start_month && checkMonthStr < cb.start_month) return;
               if (cb.end_month && checkMonthStr > cb.end_month) return;
-              
+
+              let description = cb.description || `Parcelamento/Assinatura`;
+              // Só numera parcelamento de verdade (tem fim). Assinatura sem
+              // fim (end_month null) não ganha "(n/total)".
+              if (cb.start_month && cb.end_month) {
+                const totalInstallments = monthsBetweenYm(cb.start_month, cb.end_month) + 1;
+                const currentInstallment = monthsBetweenYm(cb.start_month, checkMonthStr) + 1;
+                description = `${description} (${currentInstallment}/${totalInstallments})`;
+              }
+
               installmentsForThisCard.push({
                 ...cb,
-                description: cb.description || `Parcelamento/Assinatura`,
+                description,
                 amount: Number(cb.amount),
                 type: 'card_installment',
                 date: dateStr // Para exibição no modal

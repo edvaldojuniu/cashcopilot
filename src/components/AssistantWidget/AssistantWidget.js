@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useFinance } from '@/contexts/FinanceContext';
 import { supabase } from '@/lib/supabase';
 import { formatCurrency } from '@/lib/utils';
+import { useBackButtonClose } from '@/hooks/useBackButtonClose';
 import styles from './AssistantWidget.module.css';
 
 // Executado a cada envio de mensagem (fora do callback onAuthStateChange),
@@ -48,6 +49,8 @@ export default function AssistantWidget() {
   });
 
   const isBusy = BUSY_STATUSES.includes(status);
+
+  useBackButtonClose(isOpen, () => setIsOpen(false));
 
   // Carrega o histórico salvo uma única vez por sessão, assim que a auth
   // estiver pronta — não fica escrevendo/lendo repetidamente.
