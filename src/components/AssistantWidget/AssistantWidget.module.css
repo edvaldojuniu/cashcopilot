@@ -20,6 +20,13 @@
   transform: scale(0.94);
 }
 
+.outsideCatcher {
+  position: fixed;
+  inset: 0;
+  z-index: 590;
+  background: transparent;
+}
+
 .panel {
   position: fixed;
   right: var(--space-md);

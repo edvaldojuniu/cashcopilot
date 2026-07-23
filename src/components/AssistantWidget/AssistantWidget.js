@@ -38,7 +38,6 @@ export default function AssistantWidget() {
   const listRef = useRef(null);
   const syncedToolCallIds = useRef(new Set());
   const historyLoadedRef = useRef(false);
-  const widgetRef = useRef(null);
 
   const [transport] = useState(
     () => new DefaultChatTransport({ api: '/api/assistant', headers: getAuthHeaders })
@@ -96,25 +95,6 @@ export default function AssistantWidget() {
     }
   }, [messages, refetchSilent]);
 
-  // Fecha ao clicar fora do botão/painel — sem overlay, o resto da tela
-  // continua interativa enquanto o chat está aberto.
-  useEffect(() => {
-    if (!isOpen) return;
-
-    function handlePointerDown(e) {
-      if (widgetRef.current && !widgetRef.current.contains(e.target)) {
-        setIsOpen(false);
-      }
-    }
-
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('touchstart', handlePointerDown);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('touchstart', handlePointerDown);
-    };
-  }, [isOpen]);
-
   if (!isAuthenticated) return null;
 
   function handleSubmit(e) {
@@ -125,7 +105,7 @@ export default function AssistantWidget() {
   }
 
   return (
-    <div ref={widgetRef}>
+    <>
       <button
         type="button"
         className={styles.fab}
@@ -136,7 +116,15 @@ export default function AssistantWidget() {
       </button>
 
       {isOpen && (
-        <div className={styles.panel}>
+        <>
+          {/* Transparente — só existe pra capturar o toque fora e fechar,
+              sem deixar esse mesmo toque "vazar" pra tabela por baixo. */}
+          <div
+            className={styles.outsideCatcher}
+            onClick={() => setIsOpen(false)}
+            aria-hidden="true"
+          />
+          <div className={styles.panel}>
           <div className={styles.header}>
             <span>Assistente Cash Copilot</span>
             <button
@@ -236,8 +224,9 @@ export default function AssistantWidget() {
               ➤
             </button>
           </form>
-        </div>
+          </div>
+        </>
       )}
-    </div>
+    </>
   );
 }
