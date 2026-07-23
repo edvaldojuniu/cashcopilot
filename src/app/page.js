@@ -25,6 +25,7 @@ export default function HomePage() {
   const [selectedDay, setSelectedDay] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const todayRef = useRef(null);
+  const firstDayRef = useRef(null);
 
   const [windowWidth, setWindowWidth] = useState(0);
 
@@ -62,12 +63,23 @@ export default function HomePage() {
     return max;
   }, [monthsData]);
 
-  // Scroll to today
+  // Ao trocar de período, sempre reposiciona a rolagem: se "hoje" está no
+  // período visível, centraliza nele; senão volta para o início — sem isso,
+  // navegar pra um período onde hoje não aparece deixava a rolagem parada
+  // onde estava, escondendo o começo da nova coluna sem o usuário perceber.
   useEffect(() => {
     if (todayRef.current) {
       todayRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else if (maxMonths > 1) {
+      // Desktop: cada card tem scroll vertical próprio + o carrossel
+      // horizontal — scrollIntoView reposiciona os dois eixos de uma vez.
+      firstDayRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'start' });
+    } else {
+      // Mobile: a página inteira rola — volta pro topo, mostrando o
+      // navegador de período e o início da lista.
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  }, [viewMonth, viewYear, monthsData]);
+  }, [viewMonth, viewYear, monthsData, maxMonths]);
 
   // Loading state
   if (authLoading) {
@@ -133,10 +145,14 @@ export default function HomePage() {
                   </div>
                 )}
                 <div className={styles.columnBody}>
-                  {mData.forecast.map((dayData) => {
+                  {mData.forecast.map((dayData, dayIndex) => {
                     const enhancedDayData = { ...dayData, onOpenInvoiceDetails: setSelectedInvoice };
+                    const isFirstDay = index === 0 && dayIndex === 0;
                     return (
-                      <div key={dayData.dateStr || dayData.day} ref={dayData.isToday && index === 0 ? todayRef : null}>
+                      <div
+                        key={dayData.dateStr || dayData.day}
+                        ref={dayData.isToday && index === 0 ? todayRef : isFirstDay ? firstDayRef : null}
+                      >
                         <div onClick={() => setSelectedDay(dayData.dateStr)}>
                           <DayRow
                             data={enhancedDayData}

@@ -139,7 +139,7 @@
 }
 
 .negative {
-  color: var(--color-expense);
+  /*color: var(--color-expense);*/
 }
 
 .invoiceRow {
