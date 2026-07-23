@@ -147,7 +147,14 @@
   padding: 0;
 }
 
+.actionsRow {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
 .submitBtn {
+  flex: 1;
   width: 100%;
   padding: var(--space-md);
   background: var(--accent-primary);
@@ -159,7 +166,7 @@
   cursor: pointer;
   transition: all 0.2s;
   box-shadow: var(--shadow-sm);
-  margin-top: var(--space-md);
+  margin-top: 0;
 }
 
 .submitBtn:hover:not(:disabled) {
@@ -168,6 +175,28 @@
 }
 
 .submitBtn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.deleteBtn {
+  padding: var(--space-md) var(--space-lg);
+  background: transparent;
+  color: var(--color-expense);
+  border: 1px solid var(--color-expense);
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.deleteBtn:hover:not(:disabled) {
+  background: var(--color-expense);
+  color: white;
+}
+
+.deleteBtn:disabled {
   opacity: 0.7;
   cursor: not-allowed;
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { FinanceProvider } from '@/contexts/FinanceContext';
+import AssistantWidget from '@/components/AssistantWidget/AssistantWidget';
 
 export function Providers({ children }) {
   const [theme, setTheme] = useState('dark');
@@ -25,6 +26,7 @@ export function Providers({ children }) {
       <FinanceProvider>
         <ThemeContext.Provider value={{ theme, toggleTheme }}>
           {children}
+          <AssistantWidget />
         </ThemeContext.Provider>
       </FinanceProvider>
     </AuthProvider>

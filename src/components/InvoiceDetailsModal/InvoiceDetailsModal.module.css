@@ -19,7 +19,7 @@
 }
 
 .modal {
-  background: var(--bg-card);
+  background: var(--bg-surface);
   width: 100%;
   max-width: 500px;
   max-height: 90vh;
@@ -28,7 +28,7 @@
   flex-direction: column;
   animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-primary);
   border-bottom: none;
 }
 
@@ -42,7 +42,7 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-primary);
 }
 
 .titleArea h3 {
@@ -70,7 +70,7 @@
   display: flex;
   padding: 16px 24px;
   background: rgba(255, 255, 255, 0.02);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-primary);
   gap: 16px;
 }
 
@@ -163,8 +163,8 @@
 
 .paymentSection {
   padding: 24px;
-  background: var(--bg-card);
-  border-top: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-primary);
 }
 
 .paymentSection h4 {
@@ -187,7 +187,7 @@
 
 .dateInput {
   background: var(--bg-input);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-primary);
   color: var(--text-primary);
   padding: 12px;
   border-radius: 12px;
@@ -196,7 +196,7 @@
 }
 
 .payBtn {
-  background: var(--color-primary);
+  background: var(--accent-primary);
   color: white;
   border: none;
   padding: 12px 24px;
@@ -209,7 +209,7 @@
 }
 
 .payBtn:hover:not(:disabled) {
-  background: var(--color-primary-hover);
+  background: var(--accent-primary-hover);
   transform: translateY(-1px);
 }
 
@@ -225,6 +225,6 @@
   
   .modal {
     border-radius: 20px;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-primary);
   }
 }

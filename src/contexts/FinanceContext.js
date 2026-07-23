@@ -13,12 +13,15 @@ import { useAuth } from './AuthContext';
 import {
   generateMonthForecast,
   calculateMonthlySummary,
+  getBalanceAtMonthStart,
 } from '@/lib/engine';
 import QuickAddModal from '@/components/QuickAddModal/QuickAddModal';
 
 const FinanceContext = createContext({});
 
 // ─── Cache helpers ────────────────────────────────────────────────────────────
+
+const FOCUS_REFRESH_THROTTLE_MS = 20000;
 
 const CACHE_VERSION = 'v1';
 const getCacheKey = (userId) => `cc_finance_${userId}_${CACHE_VERSION}`;
@@ -56,6 +59,7 @@ export function FinanceProvider({ children }) {
   const [cardBills, setCardBills] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [verifiedDays, setVerifiedDays] = useState([]);
+  const [tags, setTags] = useState([]);
 
   // loading starts false — AuthContext already handles the global loading gate.
   // FinanceContext only shows its own loading spinner while actively fetching
@@ -70,6 +74,8 @@ export function FinanceProvider({ children }) {
   const isFetchingRef = useRef(false);
   // Track which user's data is currently loaded so we can detect user changes.
   const loadedUserIdRef = useRef(null);
+  // Throttle guard for the focus/visibility-triggered refresh below.
+  const lastFetchAtRef = useRef(0);
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -81,6 +87,7 @@ export function FinanceProvider({ children }) {
     setTransactions(data.transactions ?? []);
     setVerifiedDays(data.verifiedDays ?? []);
     setCardBills(data.cardBills ?? []);
+    setTags(data.tags ?? []);
   }
 
   function clearData() {
@@ -91,6 +98,7 @@ export function FinanceProvider({ children }) {
     setCardBills([]);
     setTransactions([]);
     setVerifiedDays([]);
+    setTags([]);
     setLoading(false);
     isFetchingRef.current = false;
     loadedUserIdRef.current = null;
@@ -104,6 +112,7 @@ export function FinanceProvider({ children }) {
       if (isFetchingRef.current) return;
 
       isFetchingRef.current = true;
+      lastFetchAtRef.current = Date.now();
       if (!silent) setLoading(true);
 
       // Hard timeout so a stalled fetch never leaves the UI stuck.
@@ -144,7 +153,7 @@ export function FinanceProvider({ children }) {
             .order('name'),
           supabase
             .from('daily_transactions')
-            .select('*')
+            .select('*, transaction_tags(tag_id)')
             .eq('user_id', user.id)
             .order('date'),
           supabase
@@ -156,6 +165,11 @@ export function FinanceProvider({ children }) {
             .select('*')
             .eq('user_id', user.id)
             .order('due_day'),
+          supabase
+            .from('tags')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('name'),
         ]);
 
         const extract = (i) => {
@@ -165,14 +179,24 @@ export function FinanceProvider({ children }) {
             : [];
         };
 
+        // Achata a relação N:N transaction_tags(tag_id) em um array simples
+        // tag_ids por transação, para o resto do app não lidar com o shape
+        // aninhado do Supabase.
+        const transactionsWithTagIds = extract(4).map((t) => ({
+          ...t,
+          tag_ids: (t.transaction_tags ?? []).map((tt) => tt.tag_id),
+          transaction_tags: undefined,
+        }));
+
         const freshData = {
           incomeEntries: extract(0),
           fixedExpenses: extract(1),
           variableExpenses: extract(2),
           cards: extract(3),
-          transactions: extract(4),
+          transactions: transactionsWithTagIds,
           verifiedDays: extract(5),
           cardBills: extract(6),
+          tags: extract(7),
         };
 
         // Safety guard: if every query came back empty it almost certainly
@@ -180,7 +204,7 @@ export function FinanceProvider({ children }) {
         // race on page refresh).  Don't overwrite good cached data with an
         // empty result — just silently discard it and let the cache stand.
         // This is safe because a genuine "user has zero records" state is
-        // extremely unlikely across ALL seven tables simultaneously.
+        // extremely unlikely across ALL eight tables simultaneously.
         const totalRecords =
           freshData.incomeEntries.length +
           freshData.fixedExpenses.length +
@@ -188,7 +212,8 @@ export function FinanceProvider({ children }) {
           freshData.cards.length +
           freshData.transactions.length +
           freshData.verifiedDays.length +
-          freshData.cardBills.length;
+          freshData.cardBills.length +
+          freshData.tags.length;
 
         const hasCachedData = !!loadFromCache(user.id);
 
@@ -256,6 +281,30 @@ export function FinanceProvider({ children }) {
     }
   }, [user, authLoading, sessionReady]); // intentionally NOT including fetchAllData to avoid loops
 
+  // ─── Refresh on focus/visibility ───────────────────────────────────────────
+  // Volta pro app (celular em background, ou troca de aba no desktop) sempre
+  // deve mostrar dado atualizado, como uma planilha do Google Sheets. A tela
+  // já mostra o que tem em memória instantaneamente — isso só sincroniza em
+  // segundo plano (sem loading) quando o app volta a ficar visível.
+  // Throttle evita rajada de requests se o usuário ficar trocando de
+  // aba/app repetidamente em pouco tempo.
+  useEffect(() => {
+    if (!user) return;
+
+    function refreshIfStale() {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastFetchAtRef.current < FOCUS_REFRESH_THROTTLE_MS) return;
+      fetchAllData({ silent: true });
+    }
+
+    document.addEventListener('visibilitychange', refreshIfStale);
+    window.addEventListener('focus', refreshIfStale);
+    return () => {
+      document.removeEventListener('visibilitychange', refreshIfStale);
+      window.removeEventListener('focus', refreshIfStale);
+    };
+  }, [user, fetchAllData]);
+
   // ─── Persist cache whenever state changes ─────────────────────────────────
 
   useEffect(() => {
@@ -269,7 +318,8 @@ export function FinanceProvider({ children }) {
       cards.length > 0 ||
       transactions.length > 0 ||
       verifiedDays.length > 0 ||
-      cardBills.length > 0;
+      cardBills.length > 0 ||
+      tags.length > 0;
 
     if (!hasAnyData) return;
 
@@ -281,6 +331,7 @@ export function FinanceProvider({ children }) {
       transactions,
       verifiedDays,
       cardBills,
+      tags,
     });
   }, [
     incomeEntries,
@@ -290,6 +341,7 @@ export function FinanceProvider({ children }) {
     transactions,
     verifiedDays,
     cardBills,
+    tags,
   ]);
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
@@ -463,15 +515,70 @@ export function FinanceProvider({ children }) {
     return { error };
   }
 
+  // Grava o conjunto de tags de uma transação, substituindo o anterior por
+  // completo (delete + insert é mais simples que diff e o volume por
+  // lançamento é sempre pequeno).
+  async function setTransactionTags(transactionId, tagIds = []) {
+    if (!supabase) return { error: 'Not configured' };
+    await supabase
+      .from('transaction_tags')
+      .delete()
+      .eq('transaction_id', transactionId);
+    if (tagIds.length > 0) {
+      const { error } = await supabase.from('transaction_tags').insert(
+        tagIds.map((tagId) => ({
+          transaction_id: transactionId,
+          tag_id: tagId,
+          user_id: user.id,
+        }))
+      );
+      if (error) return { error };
+    }
+    return { error: null };
+  }
+
   async function addTransaction(entry) {
     if (!supabase) return { error: 'Not configured' };
+    const { tagIds, ...rest } = entry;
     const { data, error } = await supabase
       .from('daily_transactions')
-      .insert({ ...entry, user_id: user.id })
+      .insert({ ...rest, user_id: user.id })
       .select()
       .single();
-    if (!error) setTransactions((p) => [...p, data]);
-    return { data, error };
+    if (error) return { data, error };
+
+    if (tagIds && tagIds.length > 0) {
+      const { error: tagError } = await setTransactionTags(data.id, tagIds);
+      if (tagError) return { data, error: tagError };
+    }
+
+    const withTags = { ...data, tag_ids: tagIds ?? [] };
+    setTransactions((p) => [...p, withTags]);
+    return { data: withTags, error: null };
+  }
+
+  async function updateTransaction(id, updates) {
+    if (!supabase) return { error: 'Not configured' };
+    const { tagIds, ...rest } = updates;
+    const { data, error } = await supabase
+      .from('daily_transactions')
+      .update(rest)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) return { data, error };
+
+    let finalTagIds = tagIds;
+    if (tagIds !== undefined) {
+      const { error: tagError } = await setTransactionTags(id, tagIds);
+      if (tagError) return { data, error: tagError };
+    } else {
+      finalTagIds = transactions.find((t) => t.id === id)?.tag_ids ?? [];
+    }
+
+    const withTags = { ...data, tag_ids: finalTagIds };
+    setTransactions((p) => p.map((e) => (e.id === id ? withTags : e)));
+    return { data: withTags, error: null };
   }
 
   async function deleteTransaction(id) {
@@ -506,40 +613,68 @@ export function FinanceProvider({ children }) {
     }
   }
 
+  async function addTag(name, color) {
+    if (!supabase) return { error: 'Not configured' };
+    const { data, error } = await supabase
+      .from('tags')
+      .insert({ name, color, user_id: user.id })
+      .select()
+      .single();
+    if (!error) setTags((p) => [...p, data].sort((a, b) => a.name.localeCompare(b.name)));
+    return { data, error };
+  }
+
+  async function updateTag(id, updates) {
+    if (!supabase) return { error: 'Not configured' };
+    const { data, error } = await supabase
+      .from('tags')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    if (!error) setTags((p) => p.map((t) => (t.id === id ? data : t)));
+    return { data, error };
+  }
+
+  async function deleteTag(id) {
+    if (!supabase) return { error: 'Not configured' };
+    const { error } = await supabase.from('tags').delete().eq('id', id);
+    if (!error) {
+      setTags((p) => p.filter((t) => t.id !== id));
+      setTransactions((p) =>
+        p.map((t) =>
+          t.tag_ids?.includes(id)
+            ? { ...t, tag_ids: t.tag_ids.filter((tid) => tid !== id) }
+            : t
+        )
+      );
+    }
+    return { error };
+  }
+
   // ─── Forecast ─────────────────────────────────────────────────────────────
 
   const getMonthForecast = useCallback(
     (year, month) => {
       if (!profile) return { forecast: [], summary: {} };
       const startYear = new Date().getFullYear();
-      let balance = Number(profile.initial_balance ?? 0);
-      const targetIdx = (year - startYear) * 12 + month;
-      for (let i = 0; i < targetIdx; i++) {
-        const m = i % 12;
-        const y = startYear + Math.floor(i / 12);
-        const monthTxns = transactions.filter((t) => {
-          const d = new Date(t.date);
-          return d.getFullYear() === y && d.getMonth() === m;
-        });
-        const fc = generateMonthForecast({
-          year: y,
-          month: m,
-          initialBalance: balance,
-          incomeEntries,
-          fixedExpenses,
-          variableExpenses,
-          cards,
-          cardBills,
-          verifiedDays,
-          transactions: monthTxns,
-          showDailyForecast: profile.show_daily_forecast !== false,
-          cycleStartDay: profile.cycle_start_day ?? 1,
-        });
-        balance = fc[fc.length - 1]?.balance ?? 0;
-      }
-      const monthTxns = transactions.filter((t) => {
-        const d = new Date(t.date);
-        return d.getFullYear() === year && d.getMonth() === month;
+      // Passa todas as transações — generateMonthForecast filtra por data
+      // exata internamente. Pré-filtrar por mês de calendário aqui quebrava
+      // dias que caem em outro "balde" quando cycle_start_day != 1.
+      const balance = getBalanceAtMonthStart({
+        year,
+        month,
+        referenceYear: startYear,
+        initialBalance: profile.initial_balance,
+        incomeEntries,
+        fixedExpenses,
+        variableExpenses,
+        cards,
+        cardBills,
+        verifiedDays,
+        transactions,
+        showDailyForecast: profile.show_daily_forecast !== false,
+        cycleStartDay: profile.cycle_start_day ?? 1,
       });
       const forecast = generateMonthForecast({
         year,
@@ -551,7 +686,7 @@ export function FinanceProvider({ children }) {
         cards,
         cardBills,
         verifiedDays,
-        transactions: monthTxns,
+        transactions,
         showDailyForecast: profile.show_daily_forecast !== false,
         cycleStartDay: profile.cycle_start_day ?? 1,
       });
@@ -564,39 +699,24 @@ export function FinanceProvider({ children }) {
     (startYear, startMonth, numMonths = 6) => {
       if (!profile) return [];
       const startOfHistoryYear = new Date().getFullYear();
-      let balance = Number(profile.initial_balance ?? 0);
-      const targetIdx = (startYear - startOfHistoryYear) * 12 + startMonth;
-      for (let i = 0; i < targetIdx; i++) {
-        const m = i % 12;
-        const y = startOfHistoryYear + Math.floor(i / 12);
-        const monthTxns = transactions.filter((t) => {
-          const d = new Date(t.date);
-          return d.getFullYear() === y && d.getMonth() === m;
-        });
-        const fc = generateMonthForecast({
-          year: y,
-          month: m,
-          initialBalance: balance,
-          incomeEntries,
-          fixedExpenses,
-          variableExpenses,
-          cards,
-          cardBills,
-          verifiedDays,
-          transactions: monthTxns,
-          showDailyForecast: profile.show_daily_forecast !== false,
-          cycleStartDay: profile.cycle_start_day ?? 1,
-        });
-        balance = fc[fc.length - 1]?.balance ?? 0;
-      }
-      let currentBalance = balance;
+      let currentBalance = getBalanceAtMonthStart({
+        year: startYear,
+        month: startMonth,
+        referenceYear: startOfHistoryYear,
+        initialBalance: profile.initial_balance,
+        incomeEntries,
+        fixedExpenses,
+        variableExpenses,
+        cards,
+        cardBills,
+        verifiedDays,
+        transactions,
+        showDailyForecast: profile.show_daily_forecast !== false,
+        cycleStartDay: profile.cycle_start_day ?? 1,
+      });
       return Array.from({ length: numMonths }, (_, i) => {
         const m = (startMonth + i) % 12;
         const y = startYear + Math.floor((startMonth + i) / 12);
-        const monthTxns = transactions.filter((t) => {
-          const d = new Date(t.date);
-          return d.getFullYear() === y && d.getMonth() === m;
-        });
         const forecast = generateMonthForecast({
           year: y,
           month: m,
@@ -607,7 +727,7 @@ export function FinanceProvider({ children }) {
           cards,
           cardBills,
           verifiedDays,
-          transactions: monthTxns,
+          transactions,
           showDailyForecast: profile.show_daily_forecast !== false,
           cycleStartDay: profile.cycle_start_day ?? 1,
         });
@@ -661,6 +781,7 @@ export function FinanceProvider({ children }) {
     cardBills,
     transactions,
     verifiedDays,
+    tags,
     loading,
     addIncomeEntry,
     updateIncomeEntry,
@@ -678,8 +799,12 @@ export function FinanceProvider({ children }) {
     updateCardBill,
     deleteCardBill,
     addTransaction,
+    updateTransaction,
     deleteTransaction,
     toggleVerifiedDay,
+    addTag,
+    updateTag,
+    deleteTag,
     getMonthForecast,
     getMultiMonthForecast: getMultiMonthForecastFn,
     isQuickAddOpen,
@@ -693,6 +818,10 @@ export function FinanceProvider({ children }) {
     goToCurrentMonth,
     refetchVariableExpenses,
     refetch: () => fetchAllData({ silent: false }),
+    // Sem spinner de tela cheia — usado para sincronizar depois de uma
+    // escrita feita fora do FinanceContext (ex: o assistente de IA gravando
+    // direto no Supabase a partir da rota /api/assistant).
+    refetchSilent: () => fetchAllData({ silent: true }),
   };
 
   return (

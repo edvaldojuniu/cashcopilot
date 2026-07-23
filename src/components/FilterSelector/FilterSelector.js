@@ -18,31 +18,23 @@ export default function FilterSelector({ value, onChange, performance }) {
   const isPositive = (performance || 0) >= 0;
   return (
     <div className={styles.container} id="filter-selector">
-      <div className={styles.row}>
-        <div className={styles.filtersWrapper}>
-          <div className={styles.filters}>
-            {FILTERS.map((filter) => (
+      <div className={styles.scrollArea}>
+        <div className={styles.filterTrack}>
+          {FILTERS.map((filter) => {
+            const isActive = value === filter.key;
+            return (
               <button
                 key={filter.key}
-                className={`${styles.pill} ${value === filter.key ? styles.active : ''}`}
+                className={`${styles.tab} ${isActive ? styles.activeTab : ''}`}
                 onClick={() => onChange(filter.key)}
-                style={value === filter.key ? { '--pill-color': filter.color } : {}}
+                style={{ '--tab-color': filter.color }}
                 id={`filter-${filter.key}`}
               >
-                <span className={styles.pillLabel}>{filter.label}</span>
+                <span className={styles.tabLabel}>{filter.label}</span>
               </button>
-            ))}
-          </div>
+            );
+          })}
         </div>
-        {performance !== undefined && (
-          <div className={styles.performanceChip} style={{ color: isPositive ? 'var(--color-income)' : 'var(--color-expense)' }}>
-            <span className={styles.perfLabel}>Perf.</span>
-            <span className={styles.perfValue}>
-              {isPositive ? '+' : ''}
-              {formatCurrency(performance || 0)}
-            </span>
-          </div>
-        )}
       </div>
     </div>
   );

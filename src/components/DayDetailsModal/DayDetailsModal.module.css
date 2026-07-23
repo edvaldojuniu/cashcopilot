@@ -102,6 +102,16 @@
   align-items: center;
 }
 
+.itemClickable {
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.itemClickable:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--accent-primary);
+}
+
 .itemInfo {
   display: flex;
   flex-direction: column;

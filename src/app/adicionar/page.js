@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFinance } from '@/contexts/FinanceContext';
+import TagPicker from '@/components/TagPicker/TagPicker';
 import styles from './page.module.css';
 
 export default function AdicionarPage() {
@@ -13,6 +14,7 @@ export default function AdicionarPage() {
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [tagIds, setTagIds] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const types = [
@@ -32,6 +34,7 @@ export default function AdicionarPage() {
       amount: Number(amount),
       description,
       date,
+      tagIds,
     });
 
     setLoading(false);
@@ -109,6 +112,12 @@ export default function AdicionarPage() {
             onChange={(e) => setDate(e.target.value)}
             id="input-date"
           />
+        </div>
+
+        {/* Tags */}
+        <div className={styles.field}>
+          <label className="label">Tags</label>
+          <TagPicker selectedIds={tagIds} onChange={setTagIds} />
         </div>
 
         <button

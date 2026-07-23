@@ -1,0 +1,227 @@
+import { z } from 'zod';
+import { tool } from 'ai';
+import { computeMonthForecast, calculateTagTotals } from '@/lib/engine';
+
+// Tipos que o assistente pode gravar via chat. Compra no cartão fica de fora
+// do MVP — exige escolher card_id e mexe na lógica de fatura, mais arriscado
+// para uma primeira versão de escrita por chat.
+const WRITABLE_TYPES = ['daily', 'saving'];
+
+function resolveTagIds(tagNames, tags) {
+  const resolved = [];
+  const unknown = [];
+  (tagNames || []).forEach((name) => {
+    const match = tags.find((t) => t.name.toLowerCase() === String(name).toLowerCase());
+    if (match) resolved.push(match.id);
+    else unknown.push(name);
+  });
+  return { resolved, unknown };
+}
+
+/**
+ * Monta o conjunto de tools (function calling) do assistente para uma única
+ * requisição. `financeData` é o snapshot já buscado do Supabase (mesmas
+ * tabelas que o FinanceContext busca no client); `supabaseUser` é um client
+ * autenticado como o usuário (RLS aplica normalmente) para as tools de
+ * escrita. Desacoplado da rota Next de propósito, para poder ser reutilizado
+ * por um futuro handler de webhook (WhatsApp/Telegram) sem duplicar lógica.
+ */
+export function buildAssistantTools({ supabaseUser, userId, financeData, profile }) {
+  const {
+    incomeEntries,
+    fixedExpenses,
+    variableExpenses,
+    cards,
+    cardBills,
+    verifiedDays,
+    transactions,
+    tags,
+  } = financeData;
+
+  const baseForecastParams = {
+    incomeEntries,
+    fixedExpenses,
+    variableExpenses,
+    cards,
+    cardBills,
+    verifiedDays,
+    transactions,
+    showDailyForecast: profile.show_daily_forecast !== false,
+    cycleStartDay: profile.cycle_start_day ?? 1,
+  };
+
+  function monthSummary(year, month) {
+    return computeMonthForecast({
+      ...baseForecastParams,
+      year,
+      month,
+      initialBalance: profile.initial_balance,
+    });
+  }
+
+  return {
+    getMonthSummary: tool({
+      description:
+        'Retorna o resumo financeiro (entradas, saídas fixas, cartão, orçamento diário, economias, saldo final) de um mês específico, já respeitando o ciclo financeiro customizado do usuário.',
+      inputSchema: z.object({
+        year: z.number().int().describe('Ano, ex: 2026'),
+        month: z
+          .number()
+          .int()
+          .min(0)
+          .max(11)
+          .describe('Mês em índice 0-based (0=Janeiro, 11=Dezembro)'),
+      }),
+      execute: async ({ year, month }) => {
+        const { summary, initialBalance } = monthSummary(year, month);
+        const { logs, ...rest } = summary;
+        return { initialBalance, ...rest };
+      },
+    }),
+
+    getTagTotals: tool({
+      description:
+        'Retorna o total gasto em cada tag/categoria dentro do ciclo financeiro de um mês específico.',
+      inputSchema: z.object({
+        year: z.number().int(),
+        month: z.number().int().min(0).max(11),
+      }),
+      execute: async ({ year, month }) => {
+        const { summary } = monthSummary(year, month);
+        return { tagTotals: calculateTagTotals(summary.logs || [], tags) };
+      },
+    }),
+
+    getTransactions: tool({
+      description:
+        'Lista lançamentos reais (gastos do dia a dia, economias, compras avulsas no cartão) em um intervalo de datas, opcionalmente filtrando por tag.',
+      inputSchema: z.object({
+        dateFrom: z.string().describe('Data inicial, formato YYYY-MM-DD'),
+        dateTo: z.string().describe('Data final, formato YYYY-MM-DD'),
+        tagName: z.string().optional().describe('Filtrar apenas lançamentos com essa tag'),
+      }),
+      execute: async ({ dateFrom, dateTo, tagName }) => {
+        const tagFilter = tagName
+          ? tags.find((t) => t.name.toLowerCase() === tagName.toLowerCase())
+          : null;
+        const items = transactions
+          .filter((t) => t.date >= dateFrom && t.date <= dateTo)
+          .filter((t) => !tagFilter || (t.tag_ids || []).includes(tagFilter.id))
+          .slice(0, 200)
+          .map((t) => ({
+            date: t.date,
+            type: t.type,
+            description: t.description,
+            amount: Number(t.amount),
+            tags: (t.tag_ids || [])
+              .map((id) => tags.find((tg) => tg.id === id)?.name)
+              .filter(Boolean),
+          }));
+        return { count: items.length, items };
+      },
+    }),
+
+    getCardBillDetail: tool({
+      description:
+        'Detalha a fatura de um cartão de crédito específico em um mês: total, itens que a compõem e quanto já foi pago.',
+      inputSchema: z.object({
+        cardName: z.string(),
+        year: z.number().int(),
+        month: z.number().int().min(0).max(11),
+      }),
+      execute: async ({ cardName, year, month }) => {
+        const { forecast } = monthSummary(year, month);
+        const matches = (e) =>
+          e.type === 'card' && e.description?.toLowerCase().includes(cardName.toLowerCase());
+        const day = forecast.find((d) => d.expenses.some(matches));
+        const bill = day?.expenses.find(matches);
+        if (!bill) return { found: false };
+        return {
+          found: true,
+          dueDate: day.dateStr,
+          total: bill.originalTotal,
+          alreadyPaid: bill.alreadyPaid,
+          remaining: bill.amount,
+          items: (bill.items || []).map((i) => ({
+            description: i.description,
+            amount: Number(i.amount),
+          })),
+        };
+      },
+    }),
+
+    createTag: tool({
+      description:
+        'Cria uma nova tag/categoria (nome + cor) para organizar lançamentos. Ação de baixo risco — pode ser feita sem confirmação explícita do usuário.',
+      inputSchema: z.object({
+        name: z.string(),
+        color: z.string().describe('Cor em hexadecimal, ex: #58A6FF'),
+      }),
+      execute: async ({ name, color }) => {
+        const { data, error } = await supabaseUser
+          .from('tags')
+          .insert({ name, color, user_id: userId })
+          .select()
+          .single();
+        if (error) return { error: error.message };
+        tags.push(data);
+        return { created: data };
+      },
+    }),
+
+    proposeTransaction: tool({
+      description:
+        'Monta uma proposta de novo lançamento (gasto do dia a dia ou economia) para o usuário confirmar antes de gravar. NÃO grava nada — apenas formata os dados para revisão.',
+      inputSchema: z.object({
+        date: z.string().describe('Data do lançamento, formato YYYY-MM-DD'),
+        amount: z.number().positive(),
+        description: z.string(),
+        type: z
+          .enum(WRITABLE_TYPES)
+          .describe('"daily" para gasto do dia a dia, "saving" para economia/retirada'),
+        tagNames: z.array(z.string()).optional(),
+      }),
+      execute: async ({ date, amount, description, type, tagNames }) => {
+        const { resolved, unknown } = resolveTagIds(tagNames, tags);
+        return {
+          proposal: { date, amount, description, type, tagIds: resolved },
+          unknownTags: unknown,
+        };
+      },
+    }),
+
+    confirmTransaction: tool({
+      description:
+        'Grava de fato um lançamento (gasto do dia a dia ou economia) já proposto via proposeTransaction e EXPLICITAMENTE confirmado pelo usuário em uma mensagem anterior. Nunca chamar sem essa confirmação explícita.',
+      inputSchema: z.object({
+        date: z.string(),
+        amount: z.number().positive(),
+        description: z.string(),
+        type: z.enum(WRITABLE_TYPES),
+        tagNames: z.array(z.string()).optional(),
+      }),
+      execute: async ({ date, amount, description, type, tagNames }) => {
+        const { resolved } = resolveTagIds(tagNames, tags);
+        const { data, error } = await supabaseUser
+          .from('daily_transactions')
+          .insert({ date, amount, description, type, user_id: userId })
+          .select()
+          .single();
+        if (error) return { error: error.message };
+
+        if (resolved.length > 0) {
+          const { error: tagError } = await supabaseUser.from('transaction_tags').insert(
+            resolved.map((tagId) => ({
+              transaction_id: data.id,
+              tag_id: tagId,
+              user_id: userId,
+            }))
+          );
+          if (tagError) return { created: data, tagError: tagError.message };
+        }
+
+        return { created: { ...data, tag_ids: resolved } };
+      },
+    }),
+  };
+}

@@ -8,8 +8,16 @@ import { useState } from 'react';
 
 export default function DayDetailsModal({ isOpen, onClose, dayData }) {
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
 
   if (!isOpen || !dayData) return null;
+
+  // Abre um lançamento já existente para edição/exclusão no QuickAddModal.
+  // forcedType remapeia o "type" salvo no banco (ex: 'daily') para o valor
+  // esperado pelo <select> do formulário (ex: 'diario').
+  function openEdit(item, forcedType) {
+    setEditingItem({ ...item, type: forcedType || item.type });
+  }
 
   const { dateStr, day, incomes, expenses, transactions } = dayData;
 
@@ -50,7 +58,11 @@ export default function DayDetailsModal({ isOpen, onClose, dayData }) {
                     <div className={styles.groupTitle}>Entradas</div>
                     <div className={styles.itemList}>
                       {incomes.map((inc, i) => (
-                        <div key={`inc-${i}`} className={styles.item}>
+                        <div
+                          key={`inc-${i}`}
+                          className={`${styles.item} ${styles.itemClickable}`}
+                          onClick={() => openEdit(inc)}
+                        >
                           <div className={styles.itemInfo}>
                             <span className={styles.itemDesc}>{inc.description}</span>
                             <span className={styles.itemType}>Receita</span>
@@ -69,7 +81,11 @@ export default function DayDetailsModal({ isOpen, onClose, dayData }) {
                     <div className={styles.groupTitle}>Economias (Investimentos)</div>
                     <div className={styles.itemList}>
                       {savingTxns.map((sav, i) => (
-                        <div key={`sav-${i}`} className={styles.item}>
+                        <div
+                          key={`sav-${i}`}
+                          className={`${styles.item} ${styles.itemClickable}`}
+                          onClick={() => openEdit(sav)}
+                        >
                           <div className={styles.itemInfo}>
                             <span className={styles.itemDesc}>{sav.description}</span>
                             <span className={styles.itemType}>Retirada Voluntária</span>
@@ -88,7 +104,11 @@ export default function DayDetailsModal({ isOpen, onClose, dayData }) {
                     <div className={styles.groupTitle}>Saídas Fixas</div>
                     <div className={styles.itemList}>
                       {fixedExpenses.map((exp, i) => (
-                        <div key={`exp-${i}`} className={styles.item}>
+                        <div
+                          key={`exp-${i}`}
+                          className={`${styles.item} ${styles.itemClickable}`}
+                          onClick={() => openEdit(exp)}
+                        >
                           <div className={styles.itemInfo}>
                             <span className={styles.itemDesc}>{exp.description}</span>
                             <span className={styles.itemType}>Fixa</span>
@@ -126,7 +146,11 @@ export default function DayDetailsModal({ isOpen, onClose, dayData }) {
                     <div className={styles.groupTitle}>Compras no Cartão (Neste dia)</div>
                     <div className={styles.itemList}>
                       {transactions.filter(t => t.type === 'card').map((txn, i) => (
-                        <div key={`crd-txn-${i}`} className={styles.item}>
+                        <div
+                          key={`crd-txn-${i}`}
+                          className={`${styles.item} ${styles.itemClickable}`}
+                          onClick={() => openEdit(txn)}
+                        >
                           <div className={styles.itemInfo}>
                             <span className={styles.itemDesc}>{txn.description}</span>
                             <span className={styles.itemType}>Compra Avulsa</span>
@@ -145,7 +169,11 @@ export default function DayDetailsModal({ isOpen, onClose, dayData }) {
                     <div className={styles.groupTitle}>Gastos Diários (Dinheiro/Débito)</div>
                     <div className={styles.itemList}>
                       {dailyTxns.map((txn, i) => (
-                        <div key={`txn-${i}`} className={styles.item}>
+                        <div
+                          key={`txn-${i}`}
+                          className={`${styles.item} ${styles.itemClickable}`}
+                          onClick={() => openEdit(txn, 'diario')}
+                        >
                           <div className={styles.itemInfo}>
                             <span className={styles.itemDesc}>{txn.description}</span>
                             <span className={styles.itemType}>Avulso</span>
@@ -174,10 +202,16 @@ export default function DayDetailsModal({ isOpen, onClose, dayData }) {
         </div>
       </div>
 
-      <QuickAddModal 
-        isOpen={isQuickAddOpen} 
-        onClose={() => setIsQuickAddOpen(false)} 
+      <QuickAddModal
+        isOpen={isQuickAddOpen}
+        onClose={() => setIsQuickAddOpen(false)}
         defaultDate={dateStr}
+      />
+
+      <QuickAddModal
+        isOpen={!!editingItem}
+        onClose={() => setEditingItem(null)}
+        editData={editingItem}
       />
     </>
   );

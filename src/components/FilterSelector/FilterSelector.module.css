@@ -1,10 +1,72 @@
 .container {
-  padding: var(--space-sm) var(--space-md);
+  /* Reduzimos o padding vertical para colar mais perto do calendário */
+  padding: 8px 0; 
   border-bottom: 1px solid var(--border-primary);
   position: sticky;
   top: 0;
   z-index: var(--z-sticky);
   background: var(--bg-secondary);
+}
+
+.scrollArea {
+  width: 100%;
+  overflow-x: auto;
+  /* Espaçamento lateral interno: o scroll ultrapassa a margem lindamente no mobile */
+  padding: 0 var(--space-md); 
+  
+  /* Esconde a scrollbar no Firefox e IE/Edge */
+  scrollbar-width: none; 
+  -ms-overflow-style: none;
+}
+
+/* Esconde a scrollbar no Chrome, Safari e Opera */
+.scrollArea::-webkit-scrollbar {
+  display: none; 
+}
+
+.filterTrack {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  /* Fundo sutil que agrupa todos os botões (o "trilho") */
+  background: var(--bg-surface); 
+  border-radius: 12px;
+  border: 1px solid var(--border-secondary);
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: 8px; /* Arredondamento interno das abas */
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+}
+
+.activeTab {
+  /* A aba ativa ganha a cor da variável JS e salta aos olhos */
+  color: var(--tab-color, var(--text-primary));
+  background: var(--bg-primary); 
+  font-weight: var(--font-bold);
+  /* Efeito de elevação estilo iOS */
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.02); 
+}
+
+.tabLabel {
+  position: relative;
+  z-index: 2;
 }
 
 .row {
@@ -115,5 +177,10 @@
   .pill {
     padding: 4px 8px;
     gap: 3px;
+  }
+
+  .tab {
+    padding: 6px 12px;
+    font-size: 12px;
   }
 }

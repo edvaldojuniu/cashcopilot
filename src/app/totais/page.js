@@ -5,15 +5,17 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useFinance } from '@/contexts/FinanceContext';
 import BottomNav from '@/components/BottomNav/BottomNav';
 import MonthNavigator from '@/components/MonthNavigator/MonthNavigator';
-import { formatCurrency, getMonthName } from '@/lib/utils';
+import { formatCurrency, formatCyclePeriodLabel } from '@/lib/utils';
+import { calculateTagTotals } from '@/lib/engine';
 import styles from './page.module.css';
 
 export default function TotaisPage() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, profile } = useAuth();
   const {
     viewMonth, viewYear,
     goToNextMonth, goToPrevMonth, goToCurrentMonth,
     getMonthForecast,
+    tags,
   } = useFinance();
 
   const [activeTab, setActiveTab] = useState('todos');
@@ -22,6 +24,8 @@ export default function TotaisPage() {
     if (!isAuthenticated) return { summary: {}, initialBalance: 0 };
     return getMonthForecast(viewYear, viewMonth);
   }, [isAuthenticated, viewYear, viewMonth, getMonthForecast]);
+
+  const periodLabel = formatCyclePeriodLabel(viewYear, viewMonth, profile?.cycle_start_day ?? 1);
 
   const cards = [
     {
@@ -86,6 +90,7 @@ export default function TotaisPage() {
   ];
 
   const logs = summary.logs || [];
+  const tagTotals = calculateTagTotals(logs, tags);
   const filteredLogs = activeTab === 'todos' ? logs : logs.filter(l => l.group === activeTab);
   
   // Sort from oldest to newest by date string 
@@ -107,7 +112,7 @@ export default function TotaisPage() {
     <div className={styles.page}>
       <header className={styles.header}>
         <h1 className={styles.title}>Hub de Controle</h1>
-        <p className={styles.subtitle}>{getMonthName(viewMonth)} {viewYear}</p>
+        <p className={styles.subtitle}>{periodLabel}</p>
       </header>
 
       <MonthNavigator
@@ -116,6 +121,7 @@ export default function TotaisPage() {
         onPrev={goToPrevMonth}
         onNext={goToNextMonth}
         onToday={goToCurrentMonth}
+        label={periodLabel}
       />
 
       <div className={styles.cards}>
@@ -143,6 +149,37 @@ export default function TotaisPage() {
           </div>
         ))}
       </div>
+
+      {tagTotals.length > 0 && (
+        <div className={styles.tagsSection}>
+          <h2 className={styles.tagsTitle}>Gastos por Tag</h2>
+          <div className={styles.tagsList}>
+            {tagTotals.map((tag) => {
+              const maxTotal = tagTotals[0].total || 1;
+              const pct = Math.max(4, Math.round((tag.total / maxTotal) * 100));
+              return (
+                <div key={tag.id} className={styles.tagRow}>
+                  <div className={styles.tagRowHeader}>
+                    <span className={styles.tagRowName}>
+                      <span className={styles.tagDot} style={{ background: tag.color }} />
+                      {tag.name}
+                    </span>
+                    <span className={styles.tagRowValue} style={{ color: tag.color }}>
+                      {formatCurrency(tag.total)}
+                    </span>
+                  </div>
+                  <div className={styles.tagBarTrack}>
+                    <div
+                      className={styles.tagBarFill}
+                      style={{ width: `${pct}%`, background: tag.color }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className={styles.logsSection}>
         <h2 className={styles.logsTitle}>Movimentações no Período</h2>

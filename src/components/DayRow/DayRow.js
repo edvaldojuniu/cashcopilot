@@ -29,10 +29,10 @@ export default function DayRow({ data, maxBalance, filter, onToggleVerify }) {
       if (fullCardAmount > 0 || displayItems.length === 0) displayItems.push({ value: fullCardAmount, icon: <span className={`${styles.typeIcon} ${styles.card}`}>C</span>, class: styles.card });
       break;
     case 'diarios_cartoes':
-      displayItems.push({ value: dailyAmount + fullCardAmount, icon: <span className={`${styles.typeIcon} ${styles.card}`}>D+C</span>, class: styles.card });
+      displayItems.push({ value: dailyAmount + fullCardAmount, icon: <span className={`${styles.typeIcon} ${styles.card}`}>DC</span>, class: styles.card });
       break;
     case 'despesas_totais':
-      displayItems.push({ value: dailyAmount + fullCardAmount + totalFixed, icon: <span className={`${styles.typeIcon} ${styles.expense}`}>DC+S</span>, class: styles.expense });
+      displayItems.push({ value: dailyAmount + fullCardAmount + totalFixed, icon: <span className={`${styles.typeIcon} ${styles.dcs}`}>DCS</span>, class: styles.expense });
       break;
     case 'todas':
     default:
@@ -58,13 +58,14 @@ export default function DayRow({ data, maxBalance, filter, onToggleVerify }) {
     <>
       <div
         className={rowClasses}
-        style={{ '--row-bg': rowBg }}
+        //style={{ '--row-bg': rowBg }}
         id={`day-row-${day}`}
       >
-        {/* Day number with manual toggle */}
-        <div 
-          className={styles.dayCell} 
-          onClick={onToggleVerify ? onToggleVerify : undefined}
+        {/* Day number with manual toggle — stopPropagation impede que o
+            clique borbulhe pro wrapper que abre o modal de detalhes do dia */}
+        <div
+          className={styles.dayCell}
+          onClick={onToggleVerify ? (e) => { e.stopPropagation(); onToggleVerify(); } : undefined}
           style={{ cursor: onToggleVerify ? 'pointer' : 'default' }}
         >
           <span className={styles.dayNumber}>{day}</span>
@@ -90,11 +91,11 @@ export default function DayRow({ data, maxBalance, filter, onToggleVerify }) {
         </div>
 
         {/* Balance */}
-        <div className={styles.balanceCell}>
-          <span
-            className={`${styles.balance} ${balance < 0 ? styles.negative : ''}`}
-            style={{ color: balance < 0 ? 'var(--color-expense)' : undefined }}
-          >
+        <div 
+          className={styles.balanceCell}
+          style={{ backgroundColor: balance < 0 ? 'var(--color-expense)' : 'var(--color-income)' }}
+        >
+          <span className={`${styles.balance} ${balance < 0 ? styles.negative : ''}`}>
             {formatCurrency(balance)}
           </span>
         </div>

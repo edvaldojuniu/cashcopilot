@@ -2,6 +2,8 @@
  * Cash Copilot — Motor de Cálculo Financeiro (V2 Pro)
  */
 
+import { getCycleBounds } from './utils';
+
 export function getDaysInMonth(year, month) {
   return new Date(year, month + 1, 0).getDate();
 }
@@ -56,14 +58,7 @@ export function generateMonthForecast({
   const today = new Date();
   const todayNormalized = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
-  let startDate, endDate;
-  if (cycleStartDay > 1) {
-    startDate = new Date(year, month - 1, cycleStartDay);
-    endDate = new Date(year, month, cycleStartDay - 1);
-  } else {
-    startDate = new Date(year, month, 1);
-    endDate = new Date(year, month + 1, 0); 
-  }
+  const { startDate, endDate } = getCycleBounds(year, month, cycleStartDay);
 
   const daysInCycle = Math.round((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
   const dailyAmountBudget = calcDailyAmount(variableExpenses, daysInCycle);
@@ -195,8 +190,10 @@ export function generateMonthForecast({
     const totalSavings = savingTxns.reduce((sum, t) => sum + Number(t.amount), 0);
 
     // Substituição Absoluta do Orçamento (A pedido do Usuário)
+    // Dias com gasto diário real lançado (passado, hoje ou futuro) mostram a
+    // soma real no lugar da previsão; sem lançamento, a previsão volta a valer.
     let dailyValue = 0;
-    if (isPast || isToday) {
+    if (isPast || isToday || dailyTxnsReal.length > 0) {
       dailyValue = totalRealDaily;
     } else {
       dailyValue = showDailyForecast ? dailyAmountBudget : 0;
@@ -282,6 +279,91 @@ export function calculateMonthlySummary(forecast) {
     },
     logs
   };
+}
+
+/**
+ * Soma os lançamentos de um período (logs já flatten de calculateMonthlySummary)
+ * agrupados por tag. Um lançamento com múltiplas tags conta o valor cheio em
+ * cada uma (sem rateio) — é o comportamento esperado para "quanto gastei em
+ * cada categoria", não uma partição contábil. Apenas logs vindos de
+ * daily_transactions carregam tag_ids; entradas/saídas fixas e faturas
+ * agregadas não têm tag e são ignoradas automaticamente.
+ */
+export function calculateTagTotals(logs, tags) {
+  const totalsByTagId = {};
+  logs.forEach((log) => {
+    (log.tag_ids || []).forEach((tagId) => {
+      totalsByTagId[tagId] = (totalsByTagId[tagId] || 0) + Number(log.amount || 0);
+    });
+  });
+
+  return tags
+    .map((tag) => ({
+      ...tag,
+      total: Math.round((totalsByTagId[tag.id] || 0) * 100) / 100,
+    }))
+    .filter((t) => t.total > 0)
+    .sort((a, b) => b.total - a.total);
+}
+
+/**
+ * Simula mês a mês, a partir de `referenceYear`/janeiro, até o mês/ano alvo,
+ * e devolve o saldo acumulado no início desse mês. `initial_balance` no
+ * profile representa o saldo em janeiro de `referenceYear` — todo saldo de
+ * qualquer mês futuro é derivado simulando para frente a partir dali (não há
+ * snapshot histórico armazenado). Único lugar com essa lógica; usado tanto
+ * pelo FinanceContext quanto pelas tools do assistente para não divergir.
+ */
+export function getBalanceAtMonthStart({
+  year,
+  month,
+  referenceYear,
+  initialBalance,
+  incomeEntries = [],
+  fixedExpenses = [],
+  variableExpenses = [],
+  transactions = [],
+  cards = [],
+  cardBills = [],
+  verifiedDays = [],
+  showDailyForecast = true,
+  cycleStartDay = 1,
+}) {
+  let balance = Number(initialBalance ?? 0);
+  const targetIdx = (year - referenceYear) * 12 + month;
+  for (let i = 0; i < targetIdx; i++) {
+    const m = i % 12;
+    const y = referenceYear + Math.floor(i / 12);
+    const fc = generateMonthForecast({
+      year: y,
+      month: m,
+      initialBalance: balance,
+      incomeEntries,
+      fixedExpenses,
+      variableExpenses,
+      cards,
+      cardBills,
+      verifiedDays,
+      transactions,
+      showDailyForecast,
+      cycleStartDay,
+    });
+    balance = fc[fc.length - 1]?.balance ?? 0;
+  }
+  return balance;
+}
+
+/**
+ * Forecast + resumo de um único mês, já resolvendo o saldo inicial via
+ * getBalanceAtMonthStart. Usado pelas tools do assistente (servidor) — a UI
+ * usa a versão em FinanceContext.getMonthForecast, que faz o mesmo cálculo
+ * reaproveitando esta mesma função de base.
+ */
+export function computeMonthForecast(params) {
+  const referenceYear = params.referenceYear ?? new Date().getFullYear();
+  const initialBalance = getBalanceAtMonthStart({ ...params, referenceYear });
+  const forecast = generateMonthForecast({ ...params, initialBalance });
+  return { forecast, summary: calculateMonthlySummary(forecast), initialBalance };
 }
 
 export function generateMultiMonthForecast(params) {

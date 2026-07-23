@@ -72,6 +72,74 @@
   margin-top: 2px;
 }
 
+.tagsSection {
+  padding: 0 var(--space-md);
+  margin-top: var(--space-md);
+}
+
+.tagsTitle {
+  font-size: var(--text-lg);
+  font-weight: var(--font-bold);
+  margin-bottom: var(--space-md);
+  color: var(--text-primary);
+}
+
+.tagsList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.tagRow {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.tagRowHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  gap: var(--space-sm);
+}
+
+.tagRowName {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+}
+
+.tagDot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.tagRowValue {
+  font-size: var(--text-sm);
+  font-weight: var(--font-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.tagBarTrack {
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--bg-input);
+  overflow: hidden;
+}
+
+.tagBarFill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width var(--transition-slow);
+}
+
 .logsSection {
   padding: 0 var(--space-md) var(--space-xl);
   margin-top: var(--space-md);

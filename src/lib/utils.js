@@ -89,6 +89,38 @@ export function getBalanceRowBg(balance, maxBalance) {
 }
 
 /**
+ * Calcula os limites (início/fim) do ciclo financeiro customizado do usuário
+ * para um dado ano/mês. Se cycleStartDay > 1, o ciclo começa nesse dia do mês
+ * anterior e termina no dia (cycleStartDay - 1) do mês informado; caso
+ * contrário é o mês de calendário puro. Único lugar que deve conter essa
+ * matemática — qualquer filtragem por "mês" no app precisa passar por aqui,
+ * nunca por corte de calendário puro (ver known_bugs_lessons).
+ */
+export function getCycleBounds(year, month, cycleStartDay = 1) {
+  let startDate, endDate;
+  if (cycleStartDay > 1) {
+    startDate = new Date(year, month - 1, cycleStartDay);
+    endDate = new Date(year, month, cycleStartDay - 1);
+  } else {
+    startDate = new Date(year, month, 1);
+    endDate = new Date(year, month + 1, 0);
+  }
+  return { startDate, endDate };
+}
+
+/**
+ * Rótulo do ciclo financeiro de um mês como intervalo de datas real
+ * (ex: "21/jun a 20/jul"), em vez do nome do mês — evita a ambiguidade de
+ * rotular um período que atravessa dois meses de calendário com apenas um
+ * nome de mês quando cycleStartDay != 1.
+ */
+export function formatCyclePeriodLabel(year, month, cycleStartDay = 1) {
+  const { startDate, endDate } = getCycleBounds(year, month, cycleStartDay);
+  const fmt = (d) => `${String(d.getDate()).padStart(2, '0')}/${getMonthAbbr(d.getMonth()).toLowerCase()}`;
+  return `${fmt(startDate)} a ${fmt(endDate)}`;
+}
+
+/**
  * Gera um ID único
  */
 export function generateId() {

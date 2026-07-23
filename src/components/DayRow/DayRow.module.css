@@ -1,8 +1,10 @@
 .row {
   display: grid;
-  grid-template-columns: 52px 1fr auto;
-  align-items: center;
-  padding: 5px var(--space-sm);
+  /* Mudei o 'auto' no final para '90px' (ou outro valor fixo) para que todas as células de saldo tenham a mesma largura nas diferentes linhas */
+  grid-template-columns: 52px 1fr 90px;
+  /* stretch faz com que as células estiquem 100% da altura da linha */
+  align-items: stretch; 
+  /* padding: 5px var(--space-sm); -> REMOVIDO para as células tocarem as bordas */
   border-bottom: 1px solid var(--border-secondary);
   transition: background-color var(--transition-fast);
   background: var(--row-bg);
@@ -20,13 +22,17 @@
 }
 
 .past {
-  opacity: 0.95;
+  /* opacity: 0.95; */
 }
 
 .dayCell {
   display: flex;
   align-items: center;
   gap: 4px;
+  /* Padding movido para dentro da célula */
+  padding: 5px var(--space-sm); 
+  /* Linha vertical à direita */
+  border-right: 1px solid var(--border-secondary); 
 }
 
 .dayNumber {
@@ -46,7 +52,10 @@
 .typeCell {
   display: flex;
   align-items: center;
-  padding: 0 var(--space-sm);
+  /* Padding movido para dentro da célula */
+  padding: 5px var(--space-sm);
+  /* Linha vertical à direita */
+  border-right: 1px solid var(--border-secondary); 
 }
 
 .typeCellContainer {
@@ -67,32 +76,37 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 15px;
+  height: 15px;
   border-radius: 50%;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: var(--font-bold);
   flex-shrink: 0;
 }
 
 .income {
-  background: rgba(0, 230, 118, 0.2);
-  color: var(--color-income);
+  background: rgba(0, 230, 118);
+  color: black;
 }
 
 .expense {
-  background: rgba(255, 82, 82, 0.2);
-  color: var(--color-expense);
+  background: rgba(255, 82, 82);
+  color: white;
 }
 
 .daily {
-  background: rgba(255, 152, 0, 0.2);
-  color: var(--color-daily);
+  background: rgba(255, 152, 0);
+  color: white;
 }
 
 .card {
-  background: rgba(171, 71, 188, 0.2);
-  color: var(--color-card);
+  background: rgba(171, 71, 188);
+  color: white;
+}
+
+.dcs {
+  background: rgb(241, 194, 194);
+  color: black;
 }
 
 .value {
@@ -102,7 +116,7 @@
 }
 
 .zero {
-  color: var(--text-tertiary);
+  /*color: var(--text-tertiary); */
 }
 
 .forecast {
@@ -110,8 +124,11 @@
 }
 
 .balanceCell {
-  text-align: right;
-  padding-left: var(--space-sm);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end; /* Alinha o conteúdo à direita */
+  /* Padding movido para dentro da célula */
+  padding: 5px var(--space-sm);
 }
 
 .balance {

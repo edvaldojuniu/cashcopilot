@@ -10,10 +10,11 @@ import FilterSelector from '@/components/FilterSelector/FilterSelector';
 import DayRow from '@/components/DayRow/DayRow';
 import DayDetailsModal from '@/components/DayDetailsModal/DayDetailsModal';
 import InvoiceDetailsModal from '@/components/InvoiceDetailsModal/InvoiceDetailsModal';
+import { formatCyclePeriodLabel } from '@/lib/utils';
 import styles from './page.module.css';
 
 export default function HomePage() {
-  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { isAuthenticated, loading: authLoading, profile } = useAuth();
   const {
     viewMonth, viewYear,
     goToNextMonth, goToPrevMonth, goToCurrentMonth,
@@ -89,7 +90,7 @@ export default function HomePage() {
     return <AuthScreen />;
   }
 
-  const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+  const cycleStartDay = profile?.cycle_start_day ?? 1;
 
   return (
     <div className={styles.page}>
@@ -99,6 +100,7 @@ export default function HomePage() {
         onPrev={goToPrevMonth}
         onNext={goToNextMonth}
         onToday={goToCurrentMonth}
+        label={formatCyclePeriodLabel(viewYear, viewMonth, cycleStartDay)}
       />
 
       <FilterSelector value={filter} onChange={setFilter} performance={summary.performance} />
@@ -127,7 +129,7 @@ export default function HomePage() {
               <div key={`${mData.year}-${mData.month}`} className={styles.monthColumn}>
                 {maxMonths > 1 && (
                   <div className={styles.monthHeader}>
-                    {monthNames[mData.month]} {mData.year}
+                    {formatCyclePeriodLabel(mData.year, mData.month, cycleStartDay)}
                   </div>
                 )}
                 <div className={styles.columnBody}>
@@ -135,11 +137,7 @@ export default function HomePage() {
                     const enhancedDayData = { ...dayData, onOpenInvoiceDetails: setSelectedInvoice };
                     return (
                       <div key={dayData.dateStr || dayData.day} ref={dayData.isToday && index === 0 ? todayRef : null}>
-                        <div onClick={(e) => {
-                          if (!e.target.closest('circle') && !e.target.closest('svg')) {
-                            setSelectedDay(dayData.dateStr);
-                          }
-                        }}>
+                        <div onClick={() => setSelectedDay(dayData.dateStr)}>
                           <DayRow
                             data={enhancedDayData}
                             maxBalance={maxBalance}
