@@ -6,10 +6,10 @@ import { FinanceProvider } from '@/contexts/FinanceContext';
 import AssistantWidget from '@/components/AssistantWidget/AssistantWidget';
 
 export function Providers({ children }) {
-  const [theme, setTheme] = useState('dark');
+  const [theme, setTheme] = useState('light');
 
   useEffect(() => {
-    const saved = localStorage.getItem('cashcopilot-theme') || 'dark';
+    const saved = localStorage.getItem('cashcopilot-theme') || 'light';
     setTheme(saved);
     document.documentElement.setAttribute('data-theme', saved);
   }, []);
@@ -35,7 +35,7 @@ export function Providers({ children }) {
 
 import { createContext, useContext } from 'react';
 
-const ThemeContext = createContext({ theme: 'dark', toggleTheme: () => {} });
+const ThemeContext = createContext({ theme: 'light', toggleTheme: () => {} });
 
 export function useTheme() {
   return useContext(ThemeContext);

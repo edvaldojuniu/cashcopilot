@@ -1,7 +1,9 @@
 .row {
   display: grid;
-  /* Mudei o 'auto' no final para '90px' (ou outro valor fixo) para que todas as células de saldo tenham a mesma largura nas diferentes linhas */
-  grid-template-columns: 52px 1fr 90px;
+  /* minmax garante 90px como mínimo (linhas alinhadas), mas cresce sozinha
+     quando o saldo tem mais dígitos — sem isso, valores grandes (ex:
+     -R$ 2.780,54) quebravam em duas linhas dentro dos 90px fixos. */
+  grid-template-columns: 52px 1fr minmax(90px, auto);
   /* stretch faz com que as células estiquem 100% da altura da linha */
   align-items: stretch; 
   /* padding: 5px var(--space-sm); -> REMOVIDO para as células tocarem as bordas */
@@ -136,6 +138,7 @@
   font-weight: var(--font-semibold);
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
+  white-space: nowrap;
 }
 
 .negative {
