@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import styles from './QuickAddModal.module.css';
 import { useFinance } from '@/contexts/FinanceContext';
 import TagPicker from '@/components/TagPicker/TagPicker';
@@ -30,6 +30,7 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const amountInputRef = useRef(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -43,7 +44,13 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
           editType === 'card' ? rawDesc.replace(/ \([^)]*\)$/, '') : rawDesc
         );
         setAmount(editData.amount?.toString() || '');
-        if (editData.date) setDate(editData.date);
+        if (editData.date) {
+          setDate(editData.date);
+        } else if (editType === 'income' && editData.due_day && editData.start_month) {
+          // income_entries não tem campo de data — reconstrói a partir de
+          // due_day + start_month pra preencher o seletor de data na edição.
+          setDate(`${editData.start_month}-${String(editData.due_day).padStart(2, '0')}`);
+        }
         if (editData.due_day) setDueDay(editData.due_day);
         if (editData.card_id) setCardId(editData.card_id);
         setTagIds(editData.tag_ids ?? []);
@@ -72,6 +79,9 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
         setTagIds([]);
         if (cards.length > 0) setCardId(cards[0].id);
       }
+      // O componente fica montado mesmo fechado (só retorna null), então
+      // autoFocus não dispara de novo a cada reabertura — foca manualmente.
+      amountInputRef.current?.focus();
     }
   }, [isOpen, initialType, editData, cards, defaultDate]);
 
@@ -96,7 +106,7 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
          };
          result = isEdit ? await updateTransaction(editData.id, payload) : await addTransaction(payload);
       }
-      else if (type === 'expense' || type === 'income') {
+      else if (type === 'expense') {
          const now = new Date();
          const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
          const baseMonthStr = isEdit && editData.start_month ? editData.start_month : monthStr;
@@ -117,16 +127,43 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
            const d = new Date(by, bm - 1 + parseInt(installments) - 1, 1);
            payload.end_month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
          } else {
-           // Única = fixed expense que começa e termina no mesmo mês
+           // Única = saída fixa que começa e termina no mesmo mês
            payload.start_month = baseMonthStr;
            payload.end_month = baseMonthStr;
          }
 
-         if (type === 'expense') {
-           result = isEdit ? await updateFixedExpense(editData.id, payload) : await addFixedExpense(payload);
+         result = isEdit ? await updateFixedExpense(editData.id, payload) : await addFixedExpense(payload);
+      }
+      else if (type === 'income') {
+         // Diferente da saída fixa: a entrada usa a data escolhida (campo
+         // "Data da Entrada"), não o dia de hoje — assim uma entrada única
+         // lançada num dia de um mês futuro/passado cai no mês certo, em vez
+         // de sempre no mês atual.
+         const pickedDate = new Date(date + 'T12:00:00');
+         const baseMonthStr = `${pickedDate.getFullYear()}-${String(pickedDate.getMonth() + 1).padStart(2, '0')}`;
+
+         let payload = {
+           description,
+           amount: val,
+           due_day: pickedDate.getDate(),
+           is_active: true
+         };
+
+         if (recurrence === 'fixa') {
+           payload.start_month = baseMonthStr;
+           payload.end_month = null;
+         } else if (recurrence === 'parcelada') {
+           payload.start_month = baseMonthStr;
+           const [by, bm] = baseMonthStr.split('-').map(Number);
+           const d = new Date(by, bm - 1 + parseInt(installments) - 1, 1);
+           payload.end_month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
          } else {
-           result = isEdit ? await updateIncomeEntry(editData.id, payload) : await addIncomeEntry(payload);
+           // Única = entrada que só vale no mês da data escolhida
+           payload.start_month = baseMonthStr;
+           payload.end_month = baseMonthStr;
          }
+
+         result = isEdit ? await updateIncomeEntry(editData.id, payload) : await addIncomeEntry(payload);
       }
       else if (type === 'card') {
          if (cards.length === 0) {
@@ -250,7 +287,7 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
 
           <div className={styles.valueGroup}>
              <span className={styles.currency}>R$</span>
-             <input type="number" step="0.01" inputMode="decimal" required value={amount} onChange={e => setAmount(e.target.value)} placeholder="0,00" />
+             <input ref={amountInputRef} type="number" step="0.01" inputMode="decimal" required value={amount} onChange={e => setAmount(e.target.value)} placeholder="0,00" />
           </div>
 
           <div className={styles.formGroup}>
@@ -258,9 +295,9 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
             <input type="text" required value={description} onChange={e => setDescription(e.target.value)} placeholder="Ex: Mercado, Uber, Salário..." />
           </div>
 
-          {(type === 'diario' || type === 'saving' || type === 'card') && (
+          {(type === 'diario' || type === 'saving' || type === 'card' || type === 'income') && (
             <div className={styles.formGroup}>
-              <label>{type === 'card' ? 'Data da Compra' : 'Data'}</label>
+              <label>{type === 'card' ? 'Data da Compra' : type === 'income' ? 'Data da Entrada' : 'Data'}</label>
               <input type="date" required value={date} onChange={e => setDate(e.target.value)} />
             </div>
           )}
@@ -274,7 +311,7 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
             </div>
           )}
 
-          {(type === 'expense' || type === 'income') && (
+          {type === 'expense' && (
             <div className={styles.formGroup}>
               <label>Dia do Vencimento</label>
               <input type="number" min="1" max="31" required value={dueDay} onChange={e => setDueDay(e.target.value)} />
