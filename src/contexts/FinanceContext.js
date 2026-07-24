@@ -771,6 +771,40 @@ export function FinanceProvider({ children }) {
     if (data) setVariableExpenses(data);
   }
 
+  // Apaga todos os dados financeiros do usuário (mantém o login/conta).
+  // Usado pela opção "Zerar minha conta" no Menu — o reset de
+  // initial_balance/cycle_start_day fica a cargo de quem chama (precisa do
+  // updateProfile do AuthContext, que este contexto não tem acesso).
+  async function resetAccount() {
+    if (!supabase || !user) return { error: 'Not configured' };
+
+    const tables = [
+      'income_entries',
+      'fixed_expenses',
+      'variable_expenses',
+      'cards',
+      'credit_card_bills',
+      'daily_transactions',
+      'verified_days',
+      'tags',
+      'assistant_messages',
+    ];
+
+    const results = await Promise.allSettled(
+      tables.map((t) => supabase.from(t).delete().eq('user_id', user.id))
+    );
+    const failed = results.find(
+      (r) => r.status === 'rejected' || r.value?.error
+    );
+    if (failed) {
+      return { error: failed.status === 'rejected' ? failed.reason : failed.value.error };
+    }
+
+    clearCache(user.id);
+    applyData({});
+    return { error: null };
+  }
+
   // ─── Context value ────────────────────────────────────────────────────────
 
   const value = {
@@ -822,6 +856,7 @@ export function FinanceProvider({ children }) {
     // escrita feita fora do FinanceContext (ex: o assistente de IA gravando
     // direto no Supabase a partir da rota /api/assistant).
     refetchSilent: () => fetchAllData({ silent: true }),
+    resetAccount,
   };
 
   return (
