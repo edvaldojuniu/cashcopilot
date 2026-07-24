@@ -9,12 +9,57 @@ export function getDaysInMonth(year, month) {
 }
 
 /**
- * Diferença em meses entre duas strings "YYYY-MM".
+ * Converte uma data "YYYY-MM-DD" do banco em meia-noite local, sem
+ * ambiguidade de timezone (mesma convenção do resto do arquivo: passa por
+ * T12:00:00 antes de zerar a hora, pra nunca cair no dia errado por causa
+ * de horário de verão).
  */
-function monthsBetweenYm(fromYm, toYm) {
-  const [fy, fm] = fromYm.split('-').map(Number);
-  const [ty, tm] = toYm.split('-').map(Number);
-  return (ty - fy) * 12 + (tm - fm);
+function toLocalMidnight(dateStr) {
+  const d = new Date(`${dateStr}T12:00:00`);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/**
+ * Diferença em meses inteiros entre duas datas locais (mesmo dia do mês ou
+ * não — só considera ano/mês).
+ */
+function monthsBetweenDates(a, b) {
+  return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+}
+
+/**
+ * Decide se um template recorrente (entrada, saída fixa, fatura de cartão
+ * ou diário/economia recorrente) tem uma ocorrência no dia `currentLoopDate`.
+ * Único lugar com essa matemática — qualquer casamento de recorrência no
+ * app precisa passar por aqui, não reimplementar à parte (ver
+ * known_bugs_lessons: já tivemos bug de lógica de data duplicada divergindo).
+ *
+ * `frequency`:
+ *  - 'none'      → casa só no dia exato (start_date === end_date === hoje)
+ *  - 'daily'     → qualquer dia dentro do intervalo [start_date, end_date]
+ *  - 'weekly'    → mesmo dia da semana do início, dentro do intervalo
+ *  - 'monthly' | 'installment' → mesmo dia do mês do início, dentro do intervalo
+ */
+export function matchesRecurrence(entry, currentLoopDate) {
+  if (entry.is_active === false || !entry.start_date) return false;
+
+  const start = toLocalMidnight(entry.start_date);
+  if (currentLoopDate < start) return false;
+
+  if (entry.end_date) {
+    const end = toLocalMidnight(entry.end_date);
+    if (currentLoopDate > end) return false;
+  }
+
+  const freq = entry.frequency || 'none';
+  if (freq === 'none') return currentLoopDate.getTime() === start.getTime();
+  if (freq === 'daily') return true;
+  if (freq === 'weekly') {
+    const diffDays = Math.round((currentLoopDate - start) / (1000 * 60 * 60 * 24));
+    return diffDays % 7 === 0;
+  }
+  // 'monthly' | 'installment'
+  return currentLoopDate.getDate() === start.getDate();
 }
 
 /**
@@ -27,18 +72,9 @@ export function calcDailyAmount(variableExpenses, daysInCycle) {
   return daysInCycle > 0 ? (total / daysInCycle) : 0;
 }
 
-function getIncomeForDay(day, incomeEntries, currYear, currMonth) {
+function getIncomeForDay(currentLoopDate, incomeEntries) {
   return incomeEntries
-    .filter((e) => {
-      if (e.is_active === false || e.due_day !== day) return false;
-      
-      const checkMonthStr = `${currYear}-${String(currMonth + 1).padStart(2, '0')}`;
-      
-      if (e.start_month && checkMonthStr < e.start_month) return false;
-      if (e.end_month && checkMonthStr > e.end_month) return false;
-      
-      return true;
-    })
+    .filter((e) => matchesRecurrence(e, currentLoopDate))
     .map((e) => ({
       ...e,
       description: e.description,
@@ -60,6 +96,7 @@ export function generateMonthForecast({
   transactions = [],
   cards = [],
   cardBills = [],
+  recurringDailyEntries = [],
   verifiedDays = [],
   showDailyForecast = true,
   cycleStartDay = 1,
@@ -78,34 +115,25 @@ export function generateMonthForecast({
   for (let i = 0; i < daysInCycle; i++) {
     const currentLoopDate = new Date(startDate);
     currentLoopDate.setDate(startDate.getDate() + i);
-    
+
     const day = currentLoopDate.getDate();
     const currYear = currentLoopDate.getFullYear();
     const currMonth = currentLoopDate.getMonth();
-    
+
     const dateStr = `${currYear}-${String(currMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    
+
     const isPast = currentLoopDate < todayNormalized;
     const isToday = currentLoopDate.getTime() === todayNormalized.getTime();
     const isFuture = currentLoopDate > todayNormalized;
     const isVerified = verifiedDays.some(d => d.date === dateStr);
 
     // Entradas do Dia
-    const incomes = getIncomeForDay(day, incomeEntries, currYear, currMonth);
+    const incomes = getIncomeForDay(currentLoopDate, incomeEntries);
     const totalIncome = incomes.reduce((sum, i) => sum + i.amount, 0);
 
     // Saídas Fixas do Dia
     const expensesFixed = fixedExpenses
-      .filter(e => {
-        if (e.is_active === false || e.due_day !== day) return false;
-        
-        const checkMonthStr = `${currYear}-${String(currMonth + 1).padStart(2, '0')}`;
-        
-        if (e.start_month && checkMonthStr < e.start_month) return false;
-        if (e.end_month && checkMonthStr > e.end_month) return false;
-        
-        return true;
-      })
+      .filter(e => matchesRecurrence(e, currentLoopDate))
       .map(e => ({ ...e, type: 'expense', amount: Number(e.amount) }));
 
     // Faturas de Cartão (Dinâmico)
@@ -115,10 +143,10 @@ export function generateMonthForecast({
       if (c.due_day === day) {
         // Padronizamos o fechamento para 7 dias antes do vencimento
         let invoiceCloseDay = c.due_day > 7 ? c.due_day - 7 : 28 + c.due_day - 7;
-        
+
         let closeCurrent = new Date(currYear, currMonth, invoiceCloseDay);
         let closePrev = new Date(currYear, currMonth - 1, invoiceCloseDay);
-        
+
         if (invoiceCloseDay > c.due_day) {
           closeCurrent = new Date(currYear, currMonth - 1, invoiceCloseDay);
           closePrev = new Date(currYear, currMonth - 2, invoiceCloseDay);
@@ -131,31 +159,32 @@ export function generateMonthForecast({
         });
 
         // 2) Procurar parcelamentos e assinaturas ativas para ESTE cartão que vencem neste dia
+        // (Cartão só admite frequency 'none'/'monthly'/'installment' — nunca
+        // semanal/diário — então cada template casa no máximo uma vez por mês.)
         const installmentsForThisCard = [];
         if (cardBills && cardBills.length > 0) {
           cardBills.forEach(cb => {
-            if (cb.is_active !== false && cb.card_id === c.id && cb.due_day === day) {
-              const checkMonthStr = `${currYear}-${String(currMonth + 1).padStart(2, '0')}`;
-              if (cb.start_month && checkMonthStr < cb.start_month) return;
-              if (cb.end_month && checkMonthStr > cb.end_month) return;
+            if (cb.card_id !== c.id) return;
+            if (!matchesRecurrence(cb, currentLoopDate)) return;
 
-              let description = cb.description || `Parcelamento/Assinatura`;
-              // Só numera parcelamento de verdade (tem fim). Assinatura sem
-              // fim (end_month null) não ganha "(n/total)".
-              if (cb.start_month && cb.end_month) {
-                const totalInstallments = monthsBetweenYm(cb.start_month, cb.end_month) + 1;
-                const currentInstallment = monthsBetweenYm(cb.start_month, checkMonthStr) + 1;
-                description = `${description} (${currentInstallment}/${totalInstallments})`;
-              }
-
-              installmentsForThisCard.push({
-                ...cb,
-                description,
-                amount: Number(cb.amount),
-                type: 'card_installment',
-                date: dateStr // Para exibição no modal
-              });
+            let description = cb.description || `Parcelamento/Assinatura`;
+            // Só numera parcelamento de verdade (tem fim). Assinatura sem
+            // fim (end_date null) não ganha "(n/total)".
+            if (cb.frequency === 'installment' && cb.end_date) {
+              const start = toLocalMidnight(cb.start_date);
+              const end = toLocalMidnight(cb.end_date);
+              const totalInstallments = monthsBetweenDates(start, end) + 1;
+              const currentInstallment = monthsBetweenDates(start, currentLoopDate) + 1;
+              description = `${description} (${currentInstallment}/${totalInstallments})`;
             }
+
+            installmentsForThisCard.push({
+              ...cb,
+              description,
+              amount: Number(cb.amount),
+              type: 'card_installment',
+              date: dateStr // Para exibição no modal
+            });
           });
         }
 
@@ -198,14 +227,29 @@ export function generateMonthForecast({
     const dayTransactions = transactions.filter(t => t.date === dateStr);
     const dailyTxnsReal = dayTransactions.filter(t => t.type === 'daily');
     const totalRealDaily = dailyTxnsReal.reduce((sum, t) => sum + Number(t.amount), 0);
-    
+
     // Gastos reais avulsos no cartão (Pingo Diário do Cartão)
     const cardTxnsReal = dayTransactions.filter(t => t.type === 'card');
     const totalRealCardDaily = cardTxnsReal.reduce((sum, t) => sum + Number(t.amount), 0);
-    
+
     // Economias (Retiradas para investimento)
     const savingTxns = dayTransactions.filter(t => t.type === 'saving');
     const totalSavings = savingTxns.reduce((sum, t) => sum + Number(t.amount), 0);
+
+    // Diário/Economia recorrentes (templates) — tratados como certos, igual
+    // saída fixa: somam sempre, independente de passado/futuro. Não entram
+    // na troca previsão-vs-real do orçamento variável abaixo.
+    const recurringDaily = recurringDailyEntries
+      .filter(e => e.kind === 'daily' && matchesRecurrence(e, currentLoopDate))
+      .map(e => ({ ...e, type: 'recurring_daily', amount: Number(e.amount), date: dateStr }));
+    const totalRecurringDaily = recurringDaily.reduce((sum, e) => sum + e.amount, 0);
+
+    const recurringSavings = recurringDailyEntries
+      .filter(e => e.kind === 'saving' && matchesRecurrence(e, currentLoopDate))
+      .map(e => ({ ...e, type: 'recurring_saving', amount: Number(e.amount), date: dateStr }));
+    const totalRecurringSaving = recurringSavings.reduce((sum, e) => sum + e.amount, 0);
+
+    const totalSavingsAll = totalSavings + totalRecurringSaving;
 
     // Substituição Absoluta do Orçamento (A pedido do Usuário)
     // Dias com gasto diário real lançado (passado, hoje ou futuro) mostram a
@@ -216,8 +260,9 @@ export function generateMonthForecast({
     } else {
       dailyValue = showDailyForecast ? dailyAmountBudget : 0;
     }
+    dailyValue += totalRecurringDaily;
 
-    balance = balance + totalIncome - totalExpense - dailyValue - totalSavings;
+    balance = balance + totalIncome - totalExpense - dailyValue - totalSavingsAll;
 
     days.push({
       day,
@@ -237,7 +282,9 @@ export function generateMonthForecast({
       dailyAmount: dailyValue,    // O valor deduzido rigorosamente (Real se Passado, Previsão se Futuro)
       dailyBudget: dailyAmountBudget, // A meta pura (apenas para ui)
       totalRealDaily,             // Total que gastou no dia de verdade no dinheiro/débito
-      totalSavings,
+      totalSavings: totalSavingsAll,
+      recurringDaily,             // Ocorrências de templates recorrentes de diário neste dia
+      recurringSavings,           // Ocorrências de templates recorrentes de economia neste dia
       balance: Math.round(balance * 100) / 100,
       transactions: dayTransactions,
       hasRealData: dayTransactions.length > 0,
@@ -254,7 +301,7 @@ export function calculateMonthlySummary(forecast) {
   const totalCard = forecast.reduce((sum, d) => sum + d.totalCard, 0);
   const totalDaily = forecast.reduce((sum, d) => sum + d.dailyAmount, 0);
   const totalSavings = forecast.reduce((sum, d) => sum + d.totalSavings, 0);
-  
+
   const custoDeVida = totalExpense + totalDaily;
   const totalExpenseAll = custoDeVida + totalSavings;
   const performance = totalIncome - totalExpenseAll;
@@ -276,6 +323,9 @@ export function calculateMonthlySummary(forecast) {
     d.expenses.forEach(e => logs.push({ ...e, logDate: d.dateStr, group: e.type === 'card' ? 'card' : 'fixed' }));
     // Transactions (Daily + Savings)
     d.transactions.forEach(t => logs.push({ ...t, logDate: d.dateStr, group: t.type === 'saving' ? 'saving' : 'daily' }));
+    // Diário/Economia recorrentes (templates)
+    d.recurringDaily.forEach(e => logs.push({ ...e, logDate: d.dateStr, group: 'daily' }));
+    d.recurringSavings.forEach(e => logs.push({ ...e, logDate: d.dateStr, group: 'saving' }));
   });
 
   return {
@@ -343,6 +393,7 @@ export function getBalanceAtMonthStart({
   transactions = [],
   cards = [],
   cardBills = [],
+  recurringDailyEntries = [],
   verifiedDays = [],
   showDailyForecast = true,
   cycleStartDay = 1,
@@ -361,6 +412,7 @@ export function getBalanceAtMonthStart({
       variableExpenses,
       cards,
       cardBills,
+      recurringDailyEntries,
       verifiedDays,
       transactions,
       showDailyForecast,

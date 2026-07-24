@@ -34,8 +34,8 @@ function createUserSupabaseClient(accessToken) {
 
 async function fetchFinanceData(supabaseUser, userId) {
   const results = await Promise.allSettled([
-    supabaseUser.from('income_entries').select('*').eq('user_id', userId),
-    supabaseUser.from('fixed_expenses').select('*').eq('user_id', userId),
+    supabaseUser.from('income_entries').select('*, income_entry_tags(tag_id)').eq('user_id', userId),
+    supabaseUser.from('fixed_expenses').select('*, fixed_expense_tags(tag_id)').eq('user_id', userId),
     supabaseUser.from('variable_expenses').select('*').eq('user_id', userId),
     supabaseUser.from('cards').select('*').eq('user_id', userId),
     supabaseUser
@@ -44,8 +44,12 @@ async function fetchFinanceData(supabaseUser, userId) {
       .eq('user_id', userId)
       .order('date'),
     supabaseUser.from('verified_days').select('*').eq('user_id', userId),
-    supabaseUser.from('credit_card_bills').select('*').eq('user_id', userId),
+    supabaseUser.from('credit_card_bills').select('*, card_bill_tags(tag_id)').eq('user_id', userId),
     supabaseUser.from('tags').select('*').eq('user_id', userId),
+    supabaseUser
+      .from('recurring_daily_entries')
+      .select('*, recurring_daily_entry_tags(tag_id)')
+      .eq('user_id', userId),
   ]);
 
   const extract = (i) => {
@@ -53,21 +57,27 @@ async function fetchFinanceData(supabaseUser, userId) {
     return r.status === 'fulfilled' && !r.value.error ? r.value.data ?? [] : [];
   };
 
-  const transactions = extract(4).map((t) => ({
-    ...t,
-    tag_ids: (t.transaction_tags ?? []).map((tt) => tt.tag_id),
-    transaction_tags: undefined,
-  }));
+  // Achata a relação N:N de tags (transaction_tags / *_tags) num array
+  // simples tag_ids — mesmo padrão do FinanceContext no client.
+  const withFlatTagIds = (rows, joinKey) =>
+    rows.map((r) => ({
+      ...r,
+      tag_ids: (r[joinKey] ?? []).map((j) => j.tag_id),
+      [joinKey]: undefined,
+    }));
+
+  const transactions = withFlatTagIds(extract(4), 'transaction_tags');
 
   return {
-    incomeEntries: extract(0),
-    fixedExpenses: extract(1),
+    incomeEntries: withFlatTagIds(extract(0), 'income_entry_tags'),
+    fixedExpenses: withFlatTagIds(extract(1), 'fixed_expense_tags'),
     variableExpenses: extract(2),
     cards: extract(3),
     transactions,
     verifiedDays: extract(5),
-    cardBills: extract(6),
+    cardBills: withFlatTagIds(extract(6), 'card_bill_tags'),
     tags: extract(7),
+    recurringDailyEntries: withFlatTagIds(extract(8), 'recurring_daily_entry_tags'),
   };
 }
 
@@ -133,19 +143,28 @@ export async function POST(req) {
       day: 'numeric',
     });
 
-    const tools = buildAssistantTools({
-      supabaseUser,
-      userId: user.id,
-      financeData,
-      profile,
-    });
+    const tools = {
+      ...buildAssistantTools({
+        supabaseUser,
+        userId: user.id,
+        financeData,
+        profile,
+      }),
+      // Tool nativa do Google — a busca roda nos servidores do Google
+      // (provider-executed), o modelo decide sozinho quando usar (ex: dicas
+      // gerais de economia, contexto externo). Gemini 3 suporta combinar
+      // essa tool nativa com as tools próprias acima na mesma conversa.
+      google_search: google.tools.googleSearch({}),
+    };
 
     const result = streamText({
       model: google('gemini-3.6-flash'),
       system: buildSystemPrompt({ profile, todayStr }),
       messages: await convertToModelMessages(messages.slice(-CONTEXT_MESSAGE_LIMIT)),
       tools,
-      stopWhen: stepCountIs(5),
+      // Perguntas de conselho podem encadear busca + várias tools de dado +
+      // resposta final — 5 passos era justo demais pra isso.
+      stopWhen: stepCountIs(8),
     });
 
     return result.toUIMessageStreamResponse({

@@ -33,6 +33,7 @@ export function buildAssistantTools({ supabaseUser, userId, financeData, profile
     variableExpenses,
     cards,
     cardBills,
+    recurringDailyEntries,
     verifiedDays,
     transactions,
     tags,
@@ -44,6 +45,7 @@ export function buildAssistantTools({ supabaseUser, userId, financeData, profile
     variableExpenses,
     cards,
     cardBills,
+    recurringDailyEntries,
     verifiedDays,
     transactions,
     showDailyForecast: profile.show_daily_forecast !== false,
@@ -89,6 +91,47 @@ export function buildAssistantTools({ supabaseUser, userId, financeData, profile
       execute: async ({ year, month }) => {
         const { summary } = monthSummary(year, month);
         return { tagTotals: calculateTagTotals(summary.logs || [], tags) };
+      },
+    }),
+
+    getSpendingTrends: tool({
+      description:
+        'Compara o total gasto (geral, ou de uma tag/categoria específica) nos últimos N meses, mês a mês, pra identificar se está subindo ou caindo. Use pra responder perguntas como "qual gasto está aumentando mais" ou pra embasar um plano de economia com dados reais antes de opinar.',
+      inputSchema: z.object({
+        tagName: z
+          .string()
+          .optional()
+          .describe('Nome da tag/categoria a comparar; se omitido, compara o custo de vida total (saídas fixas + diário + cartão)'),
+        months: z
+          .number()
+          .int()
+          .min(2)
+          .max(12)
+          .default(3)
+          .describe('Quantos meses recentes comparar, incluindo o mês atual'),
+      }),
+      execute: async ({ tagName, months }) => {
+        const tagFilter = tagName
+          ? tags.find((t) => t.name.toLowerCase() === tagName.toLowerCase())
+          : null;
+        if (tagName && !tagFilter) return { error: `Tag "${tagName}" não encontrada.` };
+
+        const now = new Date();
+        const series = [];
+        for (let i = months - 1; i >= 0; i--) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const { summary } = monthSummary(d.getFullYear(), d.getMonth());
+          const total = tagFilter
+            ? calculateTagTotals(summary.logs || [], tags).find((t) => t.id === tagFilter.id)?.total || 0
+            : summary.custoDeVida;
+          series.push({ year: d.getFullYear(), month: d.getMonth(), total });
+        }
+
+        const first = series[0].total;
+        const last = series[series.length - 1].total;
+        const trendPercent = first === 0 ? null : Math.round(((last - first) / first) * 10000) / 100;
+
+        return { series, trendPercent };
       },
     }),
 

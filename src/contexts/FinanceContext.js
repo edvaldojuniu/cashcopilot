@@ -60,6 +60,7 @@ export function FinanceProvider({ children }) {
   const [transactions, setTransactions] = useState([]);
   const [verifiedDays, setVerifiedDays] = useState([]);
   const [tags, setTags] = useState([]);
+  const [recurringDailyEntries, setRecurringDailyEntries] = useState([]);
 
   // loading starts false — AuthContext already handles the global loading gate.
   // FinanceContext only shows its own loading spinner while actively fetching
@@ -88,6 +89,7 @@ export function FinanceProvider({ children }) {
     setVerifiedDays(data.verifiedDays ?? []);
     setCardBills(data.cardBills ?? []);
     setTags(data.tags ?? []);
+    setRecurringDailyEntries(data.recurringDailyEntries ?? []);
   }
 
   function clearData() {
@@ -99,6 +101,7 @@ export function FinanceProvider({ children }) {
     setTransactions([]);
     setVerifiedDays([]);
     setTags([]);
+    setRecurringDailyEntries([]);
     setLoading(false);
     isFetchingRef.current = false;
     loadedUserIdRef.current = null;
@@ -133,14 +136,14 @@ export function FinanceProvider({ children }) {
         const results = await Promise.allSettled([
           supabase
             .from('income_entries')
-            .select('*')
+            .select('*, income_entry_tags(tag_id)')
             .eq('user_id', user.id)
-            .order('due_day'),
+            .order('start_date'),
           supabase
             .from('fixed_expenses')
-            .select('*')
+            .select('*, fixed_expense_tags(tag_id)')
             .eq('user_id', user.id)
-            .order('due_day'),
+            .order('start_date'),
           supabase
             .from('variable_expenses')
             .select('*')
@@ -162,14 +165,19 @@ export function FinanceProvider({ children }) {
             .eq('user_id', user.id),
           supabase
             .from('credit_card_bills')
-            .select('*')
+            .select('*, card_bill_tags(tag_id)')
             .eq('user_id', user.id)
-            .order('due_day'),
+            .order('start_date'),
           supabase
             .from('tags')
             .select('*')
             .eq('user_id', user.id)
             .order('name'),
+          supabase
+            .from('recurring_daily_entries')
+            .select('*, recurring_daily_entry_tags(tag_id)')
+            .eq('user_id', user.id)
+            .order('start_date'),
         ]);
 
         const extract = (i) => {
@@ -179,24 +187,28 @@ export function FinanceProvider({ children }) {
             : [];
         };
 
-        // Achata a relação N:N transaction_tags(tag_id) em um array simples
-        // tag_ids por transação, para o resto do app não lidar com o shape
+        // Achata a relação N:N de tags (transaction_tags / *_tags) em um
+        // array simples tag_ids, para o resto do app não lidar com o shape
         // aninhado do Supabase.
-        const transactionsWithTagIds = extract(4).map((t) => ({
-          ...t,
-          tag_ids: (t.transaction_tags ?? []).map((tt) => tt.tag_id),
-          transaction_tags: undefined,
-        }));
+        const withFlatTagIds = (rows, joinKey) =>
+          rows.map((r) => ({
+            ...r,
+            tag_ids: (r[joinKey] ?? []).map((j) => j.tag_id),
+            [joinKey]: undefined,
+          }));
+
+        const transactionsWithTagIds = withFlatTagIds(extract(4), 'transaction_tags');
 
         const freshData = {
-          incomeEntries: extract(0),
-          fixedExpenses: extract(1),
+          incomeEntries: withFlatTagIds(extract(0), 'income_entry_tags'),
+          fixedExpenses: withFlatTagIds(extract(1), 'fixed_expense_tags'),
           variableExpenses: extract(2),
           cards: extract(3),
           transactions: transactionsWithTagIds,
           verifiedDays: extract(5),
-          cardBills: extract(6),
+          cardBills: withFlatTagIds(extract(6), 'card_bill_tags'),
           tags: extract(7),
+          recurringDailyEntries: withFlatTagIds(extract(8), 'recurring_daily_entry_tags'),
         };
 
         // Safety guard: if every query came back empty it almost certainly
@@ -204,7 +216,7 @@ export function FinanceProvider({ children }) {
         // race on page refresh).  Don't overwrite good cached data with an
         // empty result — just silently discard it and let the cache stand.
         // This is safe because a genuine "user has zero records" state is
-        // extremely unlikely across ALL eight tables simultaneously.
+        // extremely unlikely across ALL nine tables simultaneously.
         const totalRecords =
           freshData.incomeEntries.length +
           freshData.fixedExpenses.length +
@@ -213,7 +225,8 @@ export function FinanceProvider({ children }) {
           freshData.transactions.length +
           freshData.verifiedDays.length +
           freshData.cardBills.length +
-          freshData.tags.length;
+          freshData.tags.length +
+          freshData.recurringDailyEntries.length;
 
         const hasCachedData = !!loadFromCache(user.id);
 
@@ -319,7 +332,8 @@ export function FinanceProvider({ children }) {
       transactions.length > 0 ||
       verifiedDays.length > 0 ||
       cardBills.length > 0 ||
-      tags.length > 0;
+      tags.length > 0 ||
+      recurringDailyEntries.length > 0;
 
     if (!hasAnyData) return;
 
@@ -332,6 +346,7 @@ export function FinanceProvider({ children }) {
       verifiedDays,
       cardBills,
       tags,
+      recurringDailyEntries,
     });
   }, [
     incomeEntries,
@@ -342,34 +357,71 @@ export function FinanceProvider({ children }) {
     verifiedDays,
     cardBills,
     tags,
+    recurringDailyEntries,
   ]);
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
 
+  // Grava o conjunto de tags de um template recorrente (entrada, saída
+  // fixa, fatura de cartão ou diário/economia recorrente), substituindo o
+  // anterior por completo — mesmo padrão de setTransactionTags, generalizado
+  // pra qualquer uma das 4 tabelas de junção dedicadas.
+  async function setEntryTags(junctionTable, entryId, tagIds = []) {
+    if (!supabase) return { error: 'Not configured' };
+    await supabase.from(junctionTable).delete().eq('entry_id', entryId);
+    if (tagIds.length > 0) {
+      const { error } = await supabase.from(junctionTable).insert(
+        tagIds.map((tagId) => ({ entry_id: entryId, tag_id: tagId, user_id: user.id }))
+      );
+      if (error) return { error };
+    }
+    return { error: null };
+  }
+
   async function addIncomeEntry(entry) {
     if (!supabase) return { error: 'Not configured' };
+    const { tagIds, ...rest } = entry;
     const { data, error } = await supabase
       .from('income_entries')
-      .insert({ ...entry, user_id: user.id })
+      .insert({ ...rest, user_id: user.id })
       .select()
       .single();
-    if (!error)
-      setIncomeEntries((p) =>
-        [...p, data].sort((a, b) => a.due_day - b.due_day)
-      );
-    return { data, error };
+    if (error) return { data, error };
+
+    if (tagIds && tagIds.length > 0) {
+      const { error: tagError } = await setEntryTags('income_entry_tags', data.id, tagIds);
+      if (tagError) return { data, error: tagError };
+    }
+
+    const withTags = { ...data, tag_ids: tagIds ?? [] };
+    setIncomeEntries((p) =>
+      [...p, withTags].sort((a, b) => a.start_date.localeCompare(b.start_date))
+    );
+    return { data: withTags, error: null };
   }
 
   async function updateIncomeEntry(id, updates) {
     if (!supabase) return { error: 'Not configured' };
+    const { tagIds, ...rest } = updates;
     const { data, error } = await supabase
       .from('income_entries')
-      .update(updates)
+      .update(rest)
       .eq('id', id)
       .select()
       .single();
-    if (!error) setIncomeEntries((p) => p.map((e) => (e.id === id ? data : e)));
-    return { data, error };
+    if (error) return { data, error };
+
+    let finalTagIds = tagIds;
+    if (tagIds !== undefined) {
+      const { error: tagError } = await setEntryTags('income_entry_tags', id, tagIds);
+      if (tagError) return { data, error: tagError };
+    } else {
+      finalTagIds = incomeEntries.find((e) => e.id === id)?.tag_ids ?? [];
+    }
+
+    const withTags = { ...data, tag_ids: finalTagIds };
+    setIncomeEntries((p) => p.map((e) => (e.id === id ? withTags : e)));
+    return { data: withTags, error: null };
   }
 
   async function deleteIncomeEntry(id) {
@@ -384,28 +436,48 @@ export function FinanceProvider({ children }) {
 
   async function addFixedExpense(entry) {
     if (!supabase) return { error: 'Not configured' };
+    const { tagIds, ...rest } = entry;
     const { data, error } = await supabase
       .from('fixed_expenses')
-      .insert({ ...entry, user_id: user.id })
+      .insert({ ...rest, user_id: user.id })
       .select()
       .single();
-    if (!error)
-      setFixedExpenses((p) =>
-        [...p, data].sort((a, b) => a.due_day - b.due_day)
-      );
-    return { data, error };
+    if (error) return { data, error };
+
+    if (tagIds && tagIds.length > 0) {
+      const { error: tagError } = await setEntryTags('fixed_expense_tags', data.id, tagIds);
+      if (tagError) return { data, error: tagError };
+    }
+
+    const withTags = { ...data, tag_ids: tagIds ?? [] };
+    setFixedExpenses((p) =>
+      [...p, withTags].sort((a, b) => a.start_date.localeCompare(b.start_date))
+    );
+    return { data: withTags, error: null };
   }
 
   async function updateFixedExpense(id, updates) {
     if (!supabase) return { error: 'Not configured' };
+    const { tagIds, ...rest } = updates;
     const { data, error } = await supabase
       .from('fixed_expenses')
-      .update(updates)
+      .update(rest)
       .eq('id', id)
       .select()
       .single();
-    if (!error) setFixedExpenses((p) => p.map((e) => (e.id === id ? data : e)));
-    return { data, error };
+    if (error) return { data, error };
+
+    let finalTagIds = tagIds;
+    if (tagIds !== undefined) {
+      const { error: tagError } = await setEntryTags('fixed_expense_tags', id, tagIds);
+      if (tagError) return { data, error: tagError };
+    } else {
+      finalTagIds = fixedExpenses.find((e) => e.id === id)?.tag_ids ?? [];
+    }
+
+    const withTags = { ...data, tag_ids: finalTagIds };
+    setFixedExpenses((p) => p.map((e) => (e.id === id ? withTags : e)));
+    return { data: withTags, error: null };
   }
 
   async function deleteFixedExpense(id) {
@@ -484,25 +556,46 @@ export function FinanceProvider({ children }) {
 
   async function addCardBill(entry) {
     if (!supabase) return { error: 'Not configured' };
+    const { tagIds, ...rest } = entry;
     const { data, error } = await supabase
       .from('credit_card_bills')
-      .insert({ ...entry, user_id: user.id })
+      .insert({ ...rest, user_id: user.id })
       .select()
       .single();
-    if (!error) setCardBills((p) => [...p, data]);
-    return { data, error };
+    if (error) return { data, error };
+
+    if (tagIds && tagIds.length > 0) {
+      const { error: tagError } = await setEntryTags('card_bill_tags', data.id, tagIds);
+      if (tagError) return { data, error: tagError };
+    }
+
+    const withTags = { ...data, tag_ids: tagIds ?? [] };
+    setCardBills((p) => [...p, withTags]);
+    return { data: withTags, error: null };
   }
 
   async function updateCardBill(id, updates) {
     if (!supabase) return { error: 'Not configured' };
+    const { tagIds, ...rest } = updates;
     const { data, error } = await supabase
       .from('credit_card_bills')
-      .update(updates)
+      .update(rest)
       .eq('id', id)
       .select()
       .single();
-    if (!error) setCardBills((p) => p.map((e) => (e.id === id ? data : e)));
-    return { data, error };
+    if (error) return { data, error };
+
+    let finalTagIds = tagIds;
+    if (tagIds !== undefined) {
+      const { error: tagError } = await setEntryTags('card_bill_tags', id, tagIds);
+      if (tagError) return { data, error: tagError };
+    } else {
+      finalTagIds = cardBills.find((e) => e.id === id)?.tag_ids ?? [];
+    }
+
+    const withTags = { ...data, tag_ids: finalTagIds };
+    setCardBills((p) => p.map((e) => (e.id === id ? withTags : e)));
+    return { data: withTags, error: null };
   }
 
   async function deleteCardBill(id) {
@@ -512,6 +605,62 @@ export function FinanceProvider({ children }) {
       .delete()
       .eq('id', id);
     if (!error) setCardBills((p) => p.filter((e) => e.id !== id));
+    return { error };
+  }
+
+  async function addRecurringDailyEntry(entry) {
+    if (!supabase) return { error: 'Not configured' };
+    const { tagIds, ...rest } = entry;
+    const { data, error } = await supabase
+      .from('recurring_daily_entries')
+      .insert({ ...rest, user_id: user.id })
+      .select()
+      .single();
+    if (error) return { data, error };
+
+    if (tagIds && tagIds.length > 0) {
+      const { error: tagError } = await setEntryTags('recurring_daily_entry_tags', data.id, tagIds);
+      if (tagError) return { data, error: tagError };
+    }
+
+    const withTags = { ...data, tag_ids: tagIds ?? [] };
+    setRecurringDailyEntries((p) =>
+      [...p, withTags].sort((a, b) => a.start_date.localeCompare(b.start_date))
+    );
+    return { data: withTags, error: null };
+  }
+
+  async function updateRecurringDailyEntry(id, updates) {
+    if (!supabase) return { error: 'Not configured' };
+    const { tagIds, ...rest } = updates;
+    const { data, error } = await supabase
+      .from('recurring_daily_entries')
+      .update(rest)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) return { data, error };
+
+    let finalTagIds = tagIds;
+    if (tagIds !== undefined) {
+      const { error: tagError } = await setEntryTags('recurring_daily_entry_tags', id, tagIds);
+      if (tagError) return { data, error: tagError };
+    } else {
+      finalTagIds = recurringDailyEntries.find((e) => e.id === id)?.tag_ids ?? [];
+    }
+
+    const withTags = { ...data, tag_ids: finalTagIds };
+    setRecurringDailyEntries((p) => p.map((e) => (e.id === id ? withTags : e)));
+    return { data: withTags, error: null };
+  }
+
+  async function deleteRecurringDailyEntry(id) {
+    if (!supabase) return { error: 'Not configured' };
+    const { error } = await supabase
+      .from('recurring_daily_entries')
+      .delete()
+      .eq('id', id);
+    if (!error) setRecurringDailyEntries((p) => p.filter((e) => e.id !== id));
     return { error };
   }
 
@@ -640,14 +789,22 @@ export function FinanceProvider({ children }) {
     if (!supabase) return { error: 'Not configured' };
     const { error } = await supabase.from('tags').delete().eq('id', id);
     if (!error) {
+      const stripTag = (setter) =>
+        setter((p) =>
+          p.map((e) =>
+            e.tag_ids?.includes(id)
+              ? { ...e, tag_ids: e.tag_ids.filter((tid) => tid !== id) }
+              : e
+          )
+        );
       setTags((p) => p.filter((t) => t.id !== id));
-      setTransactions((p) =>
-        p.map((t) =>
-          t.tag_ids?.includes(id)
-            ? { ...t, tag_ids: t.tag_ids.filter((tid) => tid !== id) }
-            : t
-        )
-      );
+      // Cascade real no banco (FK income_entry_tags.tag_id etc.) já cuida
+      // do lado servidor — isso só mantém o cache local em dia.
+      stripTag(setTransactions);
+      stripTag(setIncomeEntries);
+      stripTag(setFixedExpenses);
+      stripTag(setCardBills);
+      stripTag(setRecurringDailyEntries);
     }
     return { error };
   }
@@ -671,6 +828,7 @@ export function FinanceProvider({ children }) {
         variableExpenses,
         cards,
         cardBills,
+        recurringDailyEntries,
         verifiedDays,
         transactions,
         showDailyForecast: profile.show_daily_forecast !== false,
@@ -685,6 +843,7 @@ export function FinanceProvider({ children }) {
         variableExpenses,
         cards,
         cardBills,
+        recurringDailyEntries,
         verifiedDays,
         transactions,
         showDailyForecast: profile.show_daily_forecast !== false,
@@ -692,7 +851,7 @@ export function FinanceProvider({ children }) {
       });
       return { forecast, summary: calculateMonthlySummary(forecast), initialBalance: balance };
     },
-    [profile, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays, transactions]
+    [profile, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, recurringDailyEntries, verifiedDays, transactions]
   );
 
   const getMultiMonthForecastFn = useCallback(
@@ -709,6 +868,7 @@ export function FinanceProvider({ children }) {
         variableExpenses,
         cards,
         cardBills,
+        recurringDailyEntries,
         verifiedDays,
         transactions,
         showDailyForecast: profile.show_daily_forecast !== false,
@@ -726,6 +886,7 @@ export function FinanceProvider({ children }) {
           variableExpenses,
           cards,
           cardBills,
+          recurringDailyEntries,
           verifiedDays,
           transactions,
           showDailyForecast: profile.show_daily_forecast !== false,
@@ -742,7 +903,7 @@ export function FinanceProvider({ children }) {
         return result;
       });
     },
-    [profile, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, verifiedDays, transactions]
+    [profile, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, recurringDailyEntries, verifiedDays, transactions]
   );
 
   // ─── Navigation ───────────────────────────────────────────────────────────
@@ -788,6 +949,7 @@ export function FinanceProvider({ children }) {
       'verified_days',
       'tags',
       'assistant_messages',
+      'recurring_daily_entries',
     ];
 
     const results = await Promise.allSettled(
@@ -816,6 +978,7 @@ export function FinanceProvider({ children }) {
     transactions,
     verifiedDays,
     tags,
+    recurringDailyEntries,
     loading,
     addIncomeEntry,
     updateIncomeEntry,
@@ -832,6 +995,9 @@ export function FinanceProvider({ children }) {
     addCardBill,
     updateCardBill,
     deleteCardBill,
+    addRecurringDailyEntry,
+    updateRecurringDailyEntry,
+    deleteRecurringDailyEntry,
     addTransaction,
     updateTransaction,
     deleteTransaction,

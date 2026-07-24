@@ -22,7 +22,7 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
     setEditingItem({ ...item, type: forcedType || item.type });
   }
 
-  const { dateStr, day, incomes, expenses, transactions } = dayData;
+  const { dateStr, day, incomes, expenses, transactions, recurringDaily = [], recurringSavings = [] } = dayData;
 
   // Separate components for easier rendering
   const fixedExpenses = expenses.filter(e => e.type !== 'card');
@@ -30,7 +30,9 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
   const dailyTxns = transactions.filter(t => t.type === 'daily');
   const savingTxns = transactions.filter(t => t.type === 'saving');
 
-  const isEmpty = incomes.length === 0 && fixedExpenses.length === 0 && cardExpenses.length === 0 && dailyTxns.length === 0 && savingTxns.length === 0;
+  const isEmpty = incomes.length === 0 && fixedExpenses.length === 0 && cardExpenses.length === 0
+    && dailyTxns.length === 0 && savingTxns.length === 0
+    && recurringDaily.length === 0 && recurringSavings.length === 0;
 
   const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
   const dateObj = new Date(dateStr + "T12:00:00");
@@ -183,6 +185,51 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
                           </div>
                           <span className={`${styles.itemAmount} ${styles.amountDaily}`}>
                             {formatCurrency(txn.amount)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {recurringDaily.length > 0 && (
+                  <div className={styles.group}>
+                    <div className={styles.groupTitle}>Gastos Diários Recorrentes</div>
+                    <div className={styles.itemList}>
+                      {recurringDaily.map((item, i) => (
+                        <div
+                          key={`rec-daily-${i}`}
+                          className={`${styles.item} ${styles.itemClickable}`}
+                          onClick={() => openEdit({ ...item, isTemplate: true }, 'diario')}
+                        >
+                          <div className={styles.itemInfo}>
+                            <span className={styles.itemDesc}>{item.description}</span>
+                            <span className={styles.itemType}>Recorrente</span>
+                          </div>
+                          <span className={`${styles.itemAmount} ${styles.amountDaily}`}>
+                            {formatCurrency(item.amount)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {recurringSavings.length > 0 && (
+                  <div className={styles.group}>
+                    <div className={styles.groupTitle}>Economias Recorrentes</div>
+                    <div className={styles.itemList}>
+                      {recurringSavings.map((item, i) => (
+                        <div
+                          key={`rec-saving-${i}`}
+                          className={`${styles.item} ${styles.itemClickable}`}
+                          onClick={() => openEdit({ ...item, isTemplate: true }, 'saving')}
+                        >
+                          <div className={styles.itemInfo}>
+                            <span className={styles.itemDesc}>{item.description}</span>
+                            <span className={styles.itemType}>Recorrente</span>
+                          </div>
+                          <span className={`${styles.itemAmount} ${styles.amountIncome}`}>
+                            {formatCurrency(item.amount)}
                           </span>
                         </div>
                       ))}

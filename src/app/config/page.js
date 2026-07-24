@@ -41,26 +41,32 @@ export default function ConfigPage() {
     let result;
 
     switch (type) {
-      case 'income':
+      case 'income': {
+        const now = new Date();
+        const startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(Number(entry.due_day)).padStart(2, '0')}`;
         result = await addIncomeEntry({
           description: entry.description,
           amount: Number(entry.amount),
-          due_day: Number(entry.due_day),
-          start_month: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
-          end_month: null,
+          frequency: 'monthly',
+          start_date: startDate,
+          end_date: null,
           is_active: true
         });
         break;
-      case 'fixed':
+      }
+      case 'fixed': {
+        const now = new Date();
+        const startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(Number(entry.due_day)).padStart(2, '0')}`;
         result = await addFixedExpense({
           description: entry.description,
           amount: Number(entry.amount),
-          due_day: Number(entry.due_day),
-          start_month: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
-          end_month: null, // by default let's make it infinite here
+          frequency: 'monthly',
+          start_date: startDate,
+          end_date: null, // por padrão, recorrente sem fim
           is_active: true
         });
         break;
+      }
       case 'variable':
         result = await addVariableExpense({
           description: entry.description,
@@ -203,7 +209,7 @@ export default function ConfigPage() {
                 <div key={entry.id} className={styles.listItem}>
                   <div className={styles.listInfo}>
                     <span className={styles.listName}>{entry.description}</span>
-                    <span className={styles.listMeta}>Dia {entry.due_day}</span>
+                    <span className={styles.listMeta}>Dia {new Date(entry.start_date + 'T12:00:00').getDate()}</span>
                   </div>
                   <span className={`${styles.listAmount} currency-positive`}>
                     {formatCurrency(entry.amount)}
@@ -264,7 +270,7 @@ export default function ConfigPage() {
                 <div key={entry.id} className={styles.listItem}>
                   <div className={styles.listInfo}>
                     <span className={styles.listName}>{entry.description}</span>
-                    <span className={styles.listMeta}>Dia {entry.due_day}</span>
+                    <span className={styles.listMeta}>Dia {new Date(entry.start_date + 'T12:00:00').getDate()}</span>
                   </div>
                   <span className={`${styles.listAmount} currency-negative`}>
                     {formatCurrency(entry.amount)}

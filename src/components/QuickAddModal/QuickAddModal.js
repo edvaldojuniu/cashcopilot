@@ -4,11 +4,40 @@ import { useState, useEffect, useRef } from 'react';
 import styles from './QuickAddModal.module.css';
 import { useFinance } from '@/contexts/FinanceContext';
 import TagPicker from '@/components/TagPicker/TagPicker';
+import QuantityStepper from './QuantityStepper';
 import { useBackButtonClose } from '@/hooks/useBackButtonClose';
+import { buildRecurrencePayload, diffMonths, diffDays } from '@/lib/recurrence';
+import { formatCurrency } from '@/lib/utils';
+
+const FULL_FREQUENCY_OPTIONS = [
+  { value: 'none', label: 'Não repete' },
+  { value: 'monthly', label: 'Mensalmente' },
+  { value: 'weekly', label: 'Semanalmente' },
+  { value: 'daily', label: 'Diariamente' },
+  { value: 'installment', label: 'Parcelado' },
+];
+
+// Cartão não admite semanal/diário — só faz sentido casar fatura por mês.
+const CARD_FREQUENCY_OPTIONS = [
+  { value: 'none', label: 'Não repete' },
+  { value: 'monthly', label: 'Mensalmente' },
+  { value: 'installment', label: 'Parcelado' },
+];
+
+const DATE_LABELS = {
+  card: 'Data da Compra',
+  income: 'Data da Entrada',
+  expense: 'Data da Saída',
+  diario: 'Data',
+  saving: 'Data',
+};
+
+const RECURRING_END_TYPES = ['monthly', 'weekly', 'daily'];
 
 export default function QuickAddModal({ isOpen, onClose, initialType = 'diario', editData = null, defaultDate = null }) {
   const {
     addTransaction, addFixedExpense, addIncomeEntry, addCardBill,
+    addRecurringDailyEntry, updateRecurringDailyEntry, deleteRecurringDailyEntry,
     updateTransaction, updateFixedExpense, updateIncomeEntry,
     deleteTransaction, deleteFixedExpense, deleteIncomeEntry,
     cards
@@ -20,14 +49,14 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(defaultDate || new Date().toISOString().split('T')[0]);
-  const [dueDay, setDueDay] = useState(new Date().getDate());
-  
+
   const [cardId, setCardId] = useState('');
   const [tagIds, setTagIds] = useState([]);
 
-  const [recurrence, setRecurrence] = useState('unica'); // unica, fixa, parcelada
-  const [installments, setInstallments] = useState(1);
-  
+  const [frequency, setFrequency] = useState('none'); // none, monthly, weekly, daily, installment
+  const [endMode, setEndMode] = useState('infinite'); // infinite, count
+  const [count, setCount] = useState(2);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const amountInputRef = useRef(null);
@@ -43,39 +72,62 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
         setDescription(
           editType === 'card' ? rawDesc.replace(/ \([^)]*\)$/, '') : rawDesc
         );
-        setAmount(editData.amount?.toString() || '');
-        if (editData.date) {
-          setDate(editData.date);
-        } else if (editType === 'income' && editData.due_day && editData.start_month) {
-          // income_entries não tem campo de data — reconstrói a partir de
-          // due_day + start_month pra preencher o seletor de data na edição.
-          setDate(`${editData.start_month}-${String(editData.due_day).padStart(2, '0')}`);
-        }
-        if (editData.due_day) setDueDay(editData.due_day);
-        if (editData.card_id) setCardId(editData.card_id);
         setTagIds(editData.tag_ids ?? []);
+        if (editData.card_id) setCardId(editData.card_id);
 
-        if (editType === 'card') {
-          // Só compras avulsas no cartão são editáveis por aqui; faturas/parcelas
-          // recorrentes vivem em outra tabela e não trocam de tipo na edição.
-          setRecurrence('unica');
-        } else if (editData.start_month && editData.end_month) {
-          setRecurrence('parcelada');
-          // Approximates installments, just for UI mapping
-          setInstallments(12); // Actually hard to reverse-calc properly without dates, MVP limitation
-        } else if (editData.start_month && !editData.end_month) {
-          setRecurrence('fixa');
+        // Lançamento avulso de verdade (daily_transactions, sem template por
+        // trás) — cartão só é editável nessa forma; diário/economia podem
+        // ser avulsos OU ocorrência de um template recorrente (isTemplate).
+        const isOneOff =
+          !editData.isTemplate &&
+          editData.date &&
+          (editType === 'diario' || editType === 'saving' || editType === 'card');
+
+        if (isOneOff) {
+          setDate(editData.date);
+          setAmount(editData.amount?.toString() || '');
+          setFrequency('none');
+          setEndMode('infinite');
+          setCount(2);
         } else {
-          setRecurrence('unica');
+          // income_entries / fixed_expenses / recurring_daily_entries —
+          // todos usam start_date/end_date/frequency.
+          const freq = editData.frequency || 'none';
+          const startDate = editData.start_date;
+          const endDate = editData.end_date;
+          const rawAmount = Number(editData.amount) || 0;
+
+          setDate(startDate || new Date().toISOString().split('T')[0]);
+          setFrequency(freq);
+
+          if (freq === 'installment') {
+            const n = startDate && endDate ? diffMonths(startDate, endDate) + 1 : 2;
+            setCount(Math.max(n, 2));
+            setEndMode('count');
+            // O valor digitado originalmente era o TOTAL — reconstrói pra edição.
+            setAmount((rawAmount * n).toString());
+          } else if (freq === 'none' || !endDate) {
+            setAmount(rawAmount.toString());
+            setEndMode('infinite');
+            setCount(2);
+          } else {
+            let n;
+            if (freq === 'monthly') n = diffMonths(startDate, endDate) + 1;
+            else if (freq === 'weekly') n = Math.round(diffDays(startDate, endDate) / 7) + 1;
+            else n = diffDays(startDate, endDate) + 1; // daily
+            setCount(Math.max(n, 2));
+            setEndMode('count');
+            setAmount(rawAmount.toString());
+          }
         }
       } else {
         setType(initialType);
         setDescription('');
         setAmount('');
         setDate(defaultDate || new Date().toISOString().split('T')[0]);
-        setDueDay(defaultDate ? parseInt(defaultDate.split('-')[2]) : new Date().getDate());
-        setRecurrence('unica');
-        setInstallments(1);
+        setFrequency('none');
+        setEndMode('infinite');
+        setCount(2);
         setTagIds([]);
         if (cards.length > 0) setCardId(cards[0].id);
       }
@@ -87,136 +139,111 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
 
   if (!isOpen) return null;
 
+  function handleTypeChange(newType) {
+    setType(newType);
+    // Cartão não admite semanal/diário — se veio de outro tipo com uma
+    // dessas escolhidas, volta pro padrão.
+    if (newType === 'card' && (frequency === 'weekly' || frequency === 'daily')) {
+      setFrequency('none');
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setIsSubmitting(true);
 
     const val = parseFloat(amount.replace(',', '.'));
     const isEdit = !!editData;
+    const finalAmount = frequency === 'installment' ? val / count : val;
     let result;
 
     try {
-      if (type === 'diario' || type === 'saving') {
-         const payload = {
+      if (type === 'income') {
+        const payload = {
+          description,
+          amount: finalAmount,
+          is_active: true,
+          tagIds,
+          ...buildRecurrencePayload({ frequency, endMode, count, date }),
+        };
+        result = isEdit ? await updateIncomeEntry(editData.id, payload) : await addIncomeEntry(payload);
+      }
+      else if (type === 'expense') {
+        const payload = {
+          description,
+          amount: finalAmount,
+          is_active: true,
+          tagIds,
+          ...buildRecurrencePayload({ frequency, endMode, count, date }),
+        };
+        result = isEdit ? await updateFixedExpense(editData.id, payload) : await addFixedExpense(payload);
+      }
+      else if (type === 'diario' || type === 'saving') {
+        const targetsTemplate = isEdit ? editData.isTemplate : frequency !== 'none';
+        if (!targetsTemplate) {
+          const payload = {
             description,
             amount: val,
             date,
             type: type === 'saving' ? 'saving' : 'daily',
             tagIds,
-         };
-         result = isEdit ? await updateTransaction(editData.id, payload) : await addTransaction(payload);
-      }
-      else if (type === 'expense') {
-         const now = new Date();
-         const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-         const baseMonthStr = isEdit && editData.start_month ? editData.start_month : monthStr;
-
-         let payload = {
-           description,
-           amount: val,
-           due_day: parseInt(dueDay),
-           is_active: true
-         };
-
-         if (recurrence === 'fixa') {
-           payload.start_month = baseMonthStr;
-           payload.end_month = null;
-         } else if (recurrence === 'parcelada') {
-           payload.start_month = baseMonthStr;
-           const [by, bm] = baseMonthStr.split('-').map(Number);
-           const d = new Date(by, bm - 1 + parseInt(installments) - 1, 1);
-           payload.end_month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-         } else {
-           // Única = saída fixa que começa e termina no mesmo mês
-           payload.start_month = baseMonthStr;
-           payload.end_month = baseMonthStr;
-         }
-
-         result = isEdit ? await updateFixedExpense(editData.id, payload) : await addFixedExpense(payload);
-      }
-      else if (type === 'income') {
-         // Diferente da saída fixa: a entrada usa a data escolhida (campo
-         // "Data da Entrada"), não o dia de hoje — assim uma entrada única
-         // lançada num dia de um mês futuro/passado cai no mês certo, em vez
-         // de sempre no mês atual.
-         const pickedDate = new Date(date + 'T12:00:00');
-         const baseMonthStr = `${pickedDate.getFullYear()}-${String(pickedDate.getMonth() + 1).padStart(2, '0')}`;
-
-         let payload = {
-           description,
-           amount: val,
-           due_day: pickedDate.getDate(),
-           is_active: true
-         };
-
-         if (recurrence === 'fixa') {
-           payload.start_month = baseMonthStr;
-           payload.end_month = null;
-         } else if (recurrence === 'parcelada') {
-           payload.start_month = baseMonthStr;
-           const [by, bm] = baseMonthStr.split('-').map(Number);
-           const d = new Date(by, bm - 1 + parseInt(installments) - 1, 1);
-           payload.end_month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-         } else {
-           // Única = entrada que só vale no mês da data escolhida
-           payload.start_month = baseMonthStr;
-           payload.end_month = baseMonthStr;
-         }
-
-         result = isEdit ? await updateIncomeEntry(editData.id, payload) : await addIncomeEntry(payload);
+          };
+          result = isEdit ? await updateTransaction(editData.id, payload) : await addTransaction(payload);
+        } else {
+          const payload = {
+            kind: type === 'saving' ? 'saving' : 'daily',
+            description,
+            amount: finalAmount,
+            is_active: true,
+            tagIds,
+            ...buildRecurrencePayload({ frequency, endMode, count, date }),
+          };
+          result = isEdit
+            ? await updateRecurringDailyEntry(editData.id, payload)
+            : await addRecurringDailyEntry(payload);
+        }
       }
       else if (type === 'card') {
-         if (cards.length === 0) {
-           alert('Você não possui cartões cadastrados. Vá em Config → Cartões.');
-           return;
-         }
-         const selCard = cards.find(c => c.id === cardId);
-         const cName = selCard ? selCard.name : 'Cartão';
+        if (cards.length === 0) {
+          alert('Você não possui cartões cadastrados. Vá em Config → Cartões.');
+          return;
+        }
+        const selCard = cards.find(c => c.id === cardId);
+        const cName = selCard ? selCard.name : 'Cartão';
 
-         if (isEdit) {
-            // Edição só é permitida para compras avulsas (tabela daily_transactions);
-            // faturas/parcelas recorrentes não são editáveis por este modal.
-            result = await updateTransaction(editData.id, {
-              description: `${description} (${cName})`,
-              amount: val,
-              date,
-              card_id: cardId,
-              tagIds,
-            });
-         } else if (recurrence === 'unica') {
-            // Lançamento pontual: vai pro diário para aparecer no dia da compra e somar na fatura dinamicamente
-            result = await addTransaction({
-              description: `${description} (${cName})`,
-              amount: val,
-              date,
-              type: 'card', // IMPORTANTE: tipo card fará o engine somá-lo na fatura dinamicamente
-              card_id: cardId,
-              tagIds,
-            });
-         } else {
-            // Lançamento recorrente/parcelado: vai para a tabela de faturas fixas/parceladas
-            const purchaseDate = new Date(date + 'T12:00:00');
-            const startMonthStr = `${purchaseDate.getFullYear()}-${String(purchaseDate.getMonth() + 1).padStart(2, '0')}`;
-
-            let payload = {
-              card_name: cName,
-              card_id: cardId,
-              description,
-              amount: val,
-              due_day: selCard ? selCard.due_day : parseInt(dueDay),
-              is_active: true,
-              start_month: startMonthStr,
-            };
-
-            if (recurrence === 'parcelada') {
-              const d = new Date(purchaseDate.getFullYear(), purchaseDate.getMonth() + parseInt(installments) - 1, 1);
-              payload.end_month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-            } else {
-              payload.end_month = null;
-            }
-
-            result = await addCardBill(payload);
-         }
+        if (isEdit) {
+          // Edição só é permitida para compras avulsas (tabela daily_transactions);
+          // faturas/parcelas recorrentes não são editáveis por este modal.
+          result = await updateTransaction(editData.id, {
+            description: `${description} (${cName})`,
+            amount: val,
+            date,
+            card_id: cardId,
+            tagIds,
+          });
+        } else if (frequency === 'none') {
+          // Lançamento pontual: vai pro diário para aparecer no dia da compra e somar na fatura dinamicamente
+          result = await addTransaction({
+            description: `${description} (${cName})`,
+            amount: val,
+            date,
+            type: 'card', // IMPORTANTE: tipo card fará o engine somá-lo na fatura dinamicamente
+            card_id: cardId,
+            tagIds,
+          });
+        } else {
+          // Lançamento recorrente/parcelado: vai para a tabela de faturas fixas/parceladas
+          const payload = {
+            card_name: cName,
+            card_id: cardId,
+            description,
+            amount: finalAmount,
+            is_active: true,
+            tagIds,
+            ...buildRecurrencePayload({ frequency, endMode, count, date }),
+          };
+          result = await addCardBill(payload);
+        }
       }
 
       if (result?.error) {
@@ -241,8 +268,12 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
     setIsDeleting(true);
     try {
       let result;
-      if (type === 'diario' || type === 'saving' || type === 'card') {
+      if (type === 'card') {
         result = await deleteTransaction(editData.id);
+      } else if (type === 'diario' || type === 'saving') {
+        result = editData.isTemplate
+          ? await deleteRecurringDailyEntry(editData.id)
+          : await deleteTransaction(editData.id);
       } else if (type === 'expense') {
         result = await deleteFixedExpense(editData.id);
       } else if (type === 'income') {
@@ -264,6 +295,25 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
     }
   }
 
+  // Repetição só é editável em: lançamento novo, entrada/saída (sempre
+  // usam tabela de template independente da frequência), ou uma ocorrência
+  // de template recorrente de diário/economia. Cartão só permite escolher
+  // ao criar (edição é sempre de compra avulsa).
+  const showFrequencySelect = type === 'card'
+    ? !editData
+    : (!editData || type === 'income' || type === 'expense' || editData.isTemplate);
+
+  const frequencyOptions = type === 'card' ? CARD_FREQUENCY_OPTIONS : FULL_FREQUENCY_OPTIONS;
+  const showEndModeSelect = showFrequencySelect && RECURRING_END_TYPES.includes(frequency);
+  const showStepper =
+    showFrequencySelect &&
+    (frequency === 'installment' || (RECURRING_END_TYPES.includes(frequency) && endMode === 'count'));
+
+  const rawTotal = parseFloat((amount || '0').replace(',', '.')) || 0;
+  const stepperLabel = frequency === 'installment'
+    ? `${count} de ${formatCurrency(rawTotal)}/${count}`
+    : `${count} de ${formatCurrency(rawTotal)}`;
+
   return (
     <div className={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={styles.modal}>
@@ -273,10 +323,10 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
         </div>
 
         <form onSubmit={handleSubmit} className={styles.formContainer}>
-          
+
           <div className={styles.formGroup}>
             <label>Tipo</label>
-            <select value={type} onChange={e => setType(e.target.value)} disabled={!!editData}>
+            <select value={type} onChange={e => handleTypeChange(e.target.value)} disabled={!!editData}>
               <option value="diario">Gasto no Dia-a-Dia</option>
               <option value="saving">Economia (Retirada)</option>
               <option value="card">Gasto no Cartão de Crédito</option>
@@ -295,12 +345,10 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
             <input type="text" required value={description} onChange={e => setDescription(e.target.value)} placeholder="Ex: Mercado, Uber, Salário..." />
           </div>
 
-          {(type === 'diario' || type === 'saving' || type === 'card' || type === 'income') && (
-            <div className={styles.formGroup}>
-              <label>{type === 'card' ? 'Data da Compra' : type === 'income' ? 'Data da Entrada' : 'Data'}</label>
-              <input type="date" required value={date} onChange={e => setDate(e.target.value)} />
-            </div>
-          )}
+          <div className={styles.formGroup}>
+            <label>{DATE_LABELS[type]}</label>
+            <input type="date" required value={date} onChange={e => setDate(e.target.value)} />
+          </div>
 
           {type === 'card' && (
             <div className={styles.formGroup}>
@@ -311,48 +359,38 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
             </div>
           )}
 
-          {type === 'expense' && (
-            <div className={styles.formGroup}>
-              <label>Dia do Vencimento</label>
-              <input type="number" min="1" max="31" required value={dueDay} onChange={e => setDueDay(e.target.value)} />
-            </div>
-          )}
-
-          {type === 'card' && !editData && (
+          {showFrequencySelect && (
             <div className={styles.formGroup}>
               <label>Repetição</label>
-              <select value={recurrence} onChange={e => setRecurrence(e.target.value)}>
-                <option value="unica">Compra Única (só neste mês)</option>
-                <option value="parcelada">Parcelada (termina)</option>
-                <option value="fixa">Assinatura Mensal (sem fim)</option>
+              <select value={frequency} onChange={e => setFrequency(e.target.value)}>
+                {frequencyOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
               </select>
             </div>
           )}
 
-          {(type === 'expense' || type === 'income') && (
+          {showEndModeSelect && (
             <div className={styles.formGroup}>
-              <label>Repetição</label>
-              <select value={recurrence} onChange={e => setRecurrence(e.target.value)}>
-                <option value="unica">Única (só este mês)</option>
-                <option value="fixa">Recorrente (sem fim)</option>
-                <option value="parcelada">Parcelada (termina)</option>
+              <label>Duração</label>
+              <select value={endMode} onChange={e => setEndMode(e.target.value)}>
+                <option value="infinite">Recorrente (sem fim)</option>
+                <option value="count">Número de repetições</option>
               </select>
             </div>
           )}
 
-          {(type === 'diario' || type === 'saving' || type === 'card') && (
+          {showStepper && (
             <div className={styles.formGroup}>
-              <label>Tags</label>
-              <TagPicker selectedIds={tagIds} onChange={setTagIds} />
+              <label>Quantidade</label>
+              <QuantityStepper count={count} onChange={setCount} label={stepperLabel} />
             </div>
           )}
 
-          {recurrence === 'parcelada' && (
-            <div className={styles.formGroup}>
-              <label>Quantidade de Parcelas</label>
-              <input type="number" min="2" max="120" required value={installments} onChange={e => setInstallments(e.target.value)} />
-            </div>
-          )}
+          <div className={styles.formGroup}>
+            <label>Tags</label>
+            <TagPicker selectedIds={tagIds} onChange={setTagIds} />
+          </div>
 
           <div className={styles.actionsRow}>
             {editData && (
