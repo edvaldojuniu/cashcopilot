@@ -90,7 +90,7 @@ export default function ConfigPage() {
         result = await addCard({
           name: entry.card_name,
           description: entry.description || null,
-          due_day: Number(entry.due_day),
+          closing_day: Number(entry.closing_day),
         });
         break;
     }
@@ -558,7 +558,7 @@ export default function ConfigPage() {
                   <div className={styles.listInfo}>
                     <span className={styles.listName}>💳 {card.name}</span>
                     <span className={styles.listMeta}>
-                      Vencimento: dia {card.due_day}
+                      Fechamento: dia {card.closing_day}
                       {card.description && ` · ${card.description}`}
                     </span>
                   </div>
@@ -593,9 +593,9 @@ export default function ConfigPage() {
                     <input
                       className="input"
                       type="number"
-                      placeholder="Dia de vencimento"
-                      value={formData.due_day || ''}
-                      onChange={(e) => setFormData({ ...formData, due_day: e.target.value })}
+                      placeholder="Dia de fechamento da fatura"
+                      value={formData.closing_day || ''}
+                      onChange={(e) => setFormData({ ...formData, closing_day: e.target.value })}
                       min="1"
                       max="31"
                     />
@@ -603,7 +603,7 @@ export default function ConfigPage() {
                   <button
                     className="btn btn-primary btn-full"
                     onClick={() => handleAdd('card')}
-                    disabled={!formData.card_name || !formData.due_day}
+                    disabled={!formData.card_name || !formData.closing_day}
                   >
                     Adicionar Cartão
                   </button>

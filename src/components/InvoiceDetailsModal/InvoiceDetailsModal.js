@@ -102,7 +102,7 @@ export default function InvoiceDetailsModal({ isOpen, onClose, invoice }) {
         {amount > 0 && (
           <div className={styles.paymentSection}>
             <h4>Registrar Pagamento</h4>
-            <p>Se você pagou esta fatura antes do dia do vencimento, escolha a data em que o dinheiro saiu da conta abaixo para o sistema descontar corretamente.</p>
+            <p>Se você pagou esta fatura antes do dia do fechamento, escolha a data em que o dinheiro saiu da conta abaixo para o sistema descontar corretamente.</p>
             <div className={styles.inputGroup}>
               <input 
                 type="date" 

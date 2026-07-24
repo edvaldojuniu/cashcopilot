@@ -147,26 +147,21 @@ export function generateMonthForecast({
     // Faturas de Cartão (Dinâmico)
     const expensesCards = [];
     cards.forEach(c => {
-      // Se a fatura desse cartão vence neste exato dia...
-      if (c.due_day === day) {
-        // Padronizamos o fechamento para 7 dias antes do vencimento
-        let invoiceCloseDay = c.due_day > 7 ? c.due_day - 7 : 28 + c.due_day - 7;
-
-        let closeCurrent = new Date(currYear, currMonth, invoiceCloseDay);
-        let closePrev = new Date(currYear, currMonth - 1, invoiceCloseDay);
-
-        if (invoiceCloseDay > c.due_day) {
-          closeCurrent = new Date(currYear, currMonth - 1, invoiceCloseDay);
-          closePrev = new Date(currYear, currMonth - 2, invoiceCloseDay);
-        }
+      // Se a fatura desse cartão fecha neste exato dia...
+      if (c.closing_day === day) {
+        // Entra nesta fatura tudo desde o fechamento anterior (inclusive)
+        // até o dia anterior a este fechamento (inclusive) — ou seja, o
+        // próprio dia de fechamento já abre a fatura seguinte.
+        const closeCurrent = new Date(currYear, currMonth, c.closing_day);
+        const closePrev = new Date(currYear, currMonth - 1, c.closing_day);
 
         const singleTransactions = transactions.filter(t => {
           if (t.type !== 'card' || t.card_id !== c.id) return false;
           const tDate = new Date(`${t.date}T12:00:00`); // Fix time
-          return tDate > closePrev && tDate <= closeCurrent;
+          return tDate >= closePrev && tDate < closeCurrent;
         });
 
-        // 2) Procurar parcelamentos e assinaturas ativas para ESTE cartão que vencem neste dia
+        // 2) Procurar parcelamentos e assinaturas ativas para ESTE cartão que fecham neste dia
         // (Cartão só admite frequency 'none'/'monthly'/'installment' — nunca
         // semanal/diário — então cada template casa no máximo uma vez por mês.)
         const installmentsForThisCard = [];
@@ -202,9 +197,8 @@ export function generateMonthForecast({
         const earlyPaymentsForThisInvoice = transactions.filter(t => {
           if (t.type !== 'invoice_payment' || t.card_id !== c.id) return false;
           const tDate = new Date(`${t.date}T12:00:00`);
-          // Pagamentos feitos desde o fechamento anterior ATÉ o dia do vencimento abatem esta fatura
-          const dueDayDate = new Date(currYear, currMonth, c.due_day);
-          return tDate > closePrev && tDate <= dueDayDate;
+          // Pagamentos feitos dentro da mesma janela desta fatura abatem ela
+          return tDate >= closePrev && tDate < closeCurrent;
         });
 
         const cardTotal = invoiceTransactions.reduce((sum, t) => sum + Number(t.amount), 0);
