@@ -56,13 +56,12 @@ export default function BottomNav() {
       ),
     },
     {
-      href: '/menu',
-      label: 'Menu',
+      href: '/analises',
+      label: 'Análises',
       icon: (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="3" y1="6" x2="21" y2="6" />
-          <line x1="3" y1="12" x2="21" y2="12" />
-          <line x1="3" y1="18" x2="21" y2="18" />
+          <path d="M3 3v18h18" />
+          <path d="M18.7 8l-5.1 5.1-2.8-2.8L7 14" />
         </svg>
       ),
     },

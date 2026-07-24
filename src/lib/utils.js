@@ -109,6 +109,15 @@ export function getCycleBounds(year, month, cycleStartDay = 1) {
 }
 
 /**
+ * Formata um objeto Date como "YYYY-MM-DD" (formato de coluna DATE do
+ * Postgres / <input type="date">), em fuso local — nunca usar
+ * toISOString() aqui, que converte pra UTC e pode virar o dia errado.
+ */
+export function formatDateStr(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/**
  * Rótulo do ciclo financeiro de um mês como intervalo de datas real
  * (ex: "21/jun a 20/jul/26"), em vez do nome do mês — evita a ambiguidade de
  * rotular um período que atravessa dois meses de calendário com apenas um

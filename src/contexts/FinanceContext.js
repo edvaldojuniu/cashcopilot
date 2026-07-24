@@ -932,6 +932,48 @@ export function FinanceProvider({ children }) {
     if (data) setVariableExpenses(data);
   }
 
+  // Metas por período (aba Análises) — não entram no fetchAllData/cache
+  // geral por serem específicas de um período pedido sob demanda pela
+  // própria página, ao contrário do resto do estado financeiro.
+  // useCallback (só depende de user) porque a página de Análises usa isso
+  // como dependência de um useEffect — sem memoizar, qualquer re-render do
+  // FinanceProvider (que envolve o app inteiro) geraria uma referência nova
+  // e disparia um refetch desnecessário.
+  const getPeriodGoal = useCallback(
+    async (periodStart, periodEnd) => {
+      if (!supabase || !user) return { data: null, error: null };
+      const { data, error } = await supabase
+        .from('period_goals')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('period_start', periodStart)
+        .eq('period_end', periodEnd)
+        .maybeSingle();
+      return { data, error };
+    },
+    [user]
+  );
+
+  async function upsertPeriodGoal({ periodStart, periodEnd, metaGasto, metaEconomia }) {
+    if (!supabase || !user) return { error: 'Not configured' };
+    const { data, error } = await supabase
+      .from('period_goals')
+      .upsert(
+        {
+          user_id: user.id,
+          period_start: periodStart,
+          period_end: periodEnd,
+          meta_gasto: metaGasto,
+          meta_economia: metaEconomia,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,period_start,period_end' }
+      )
+      .select()
+      .single();
+    return { data, error };
+  }
+
   // Apaga todos os dados financeiros do usuário (mantém o login/conta).
   // Usado pela opção "Zerar minha conta" no Menu — o reset de
   // initial_balance/cycle_start_day fica a cargo de quem chama (precisa do
@@ -950,6 +992,7 @@ export function FinanceProvider({ children }) {
       'tags',
       'assistant_messages',
       'recurring_daily_entries',
+      'period_goals',
     ];
 
     const results = await Promise.allSettled(
@@ -1017,6 +1060,8 @@ export function FinanceProvider({ children }) {
     goToPrevMonth,
     goToCurrentMonth,
     refetchVariableExpenses,
+    getPeriodGoal,
+    upsertPeriodGoal,
     refetch: () => fetchAllData({ silent: false }),
     // Sem spinner de tela cheia — usado para sincronizar depois de uma
     // escrita feita fora do FinanceContext (ex: o assistente de IA gravando
