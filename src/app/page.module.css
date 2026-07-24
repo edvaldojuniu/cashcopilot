@@ -199,7 +199,7 @@
     font-weight: var(--font-bold);
     color: var(--text-primary);
     border-bottom: 1px solid var(--border-primary);
-    text-transform: capitalize;
+    white-space: nowrap;
   }
 
   /* columnBody scrolls VERTICALLY inside each card */

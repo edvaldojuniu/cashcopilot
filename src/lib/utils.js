@@ -110,14 +110,22 @@ export function getCycleBounds(year, month, cycleStartDay = 1) {
 
 /**
  * Rótulo do ciclo financeiro de um mês como intervalo de datas real
- * (ex: "21/jun a 20/jul"), em vez do nome do mês — evita a ambiguidade de
+ * (ex: "21/jun a 20/jul/26"), em vez do nome do mês — evita a ambiguidade de
  * rotular um período que atravessa dois meses de calendário com apenas um
- * nome de mês quando cycleStartDay != 1.
+ * nome de mês quando cycleStartDay != 1. O ano sempre aparece no fim do
+ * período (à direita); se o período atravessa a virada do ano (ex:
+ * dez→jan), aparece nas duas pontas pra não ficar ambíguo.
  */
 export function formatCyclePeriodLabel(year, month, cycleStartDay = 1) {
   const { startDate, endDate } = getCycleBounds(year, month, cycleStartDay);
-  const fmt = (d) => `${String(d.getDate()).padStart(2, '0')}/${getMonthAbbr(d.getMonth()).toLowerCase()}`;
-  return `${fmt(startDate)} a ${fmt(endDate)}`;
+  const yearsDiffer = startDate.getFullYear() !== endDate.getFullYear();
+  const fmt = (d, withYear) => {
+    const day = String(d.getDate()).padStart(2, '0');
+    const monthAbbr = getMonthAbbr(d.getMonth()).toLowerCase();
+    const base = `${day}/${monthAbbr}`;
+    return withYear ? `${base}/${String(d.getFullYear()).slice(2)}` : base;
+  };
+  return `${fmt(startDate, yearsDiffer)} a ${fmt(endDate, true)}`;
 }
 
 /**
