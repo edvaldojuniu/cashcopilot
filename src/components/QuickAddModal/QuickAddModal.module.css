@@ -170,7 +170,7 @@
 }
 
 .submitBtn:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: var(--accent-primary-hover);
   transform: translateY(-1px);
 }
 

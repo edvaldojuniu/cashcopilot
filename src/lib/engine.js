@@ -51,6 +51,13 @@ export function matchesRecurrence(entry, currentLoopDate) {
     if (currentLoopDate > end) return false;
   }
 
+  // Ocorrência editada/excluída individualmente via "Atualizar somente
+  // esta" — o resto da série continua normal.
+  if (entry.exception_dates && entry.exception_dates.length > 0) {
+    const dateStr = `${currentLoopDate.getFullYear()}-${String(currentLoopDate.getMonth() + 1).padStart(2, '0')}-${String(currentLoopDate.getDate()).padStart(2, '0')}`;
+    if (entry.exception_dates.includes(dateStr)) return false;
+  }
+
   const freq = entry.frequency || 'none';
   if (freq === 'none') return currentLoopDate.getTime() === start.getTime();
   if (freq === 'daily') return true;
@@ -72,7 +79,7 @@ export function calcDailyAmount(variableExpenses, daysInCycle) {
   return daysInCycle > 0 ? (total / daysInCycle) : 0;
 }
 
-function getIncomeForDay(currentLoopDate, incomeEntries) {
+function getIncomeForDay(currentLoopDate, incomeEntries, dateStr) {
   return incomeEntries
     .filter((e) => matchesRecurrence(e, currentLoopDate))
     .map((e) => ({
@@ -80,6 +87,7 @@ function getIncomeForDay(currentLoopDate, incomeEntries) {
       description: e.description,
       amount: Number(e.amount),
       type: 'income',
+      date: dateStr, // qual ocorrência exata é essa — precisa pra editar/excluir só esta
     }));
 }
 
@@ -128,13 +136,13 @@ export function generateMonthForecast({
     const isVerified = verifiedDays.some(d => d.date === dateStr);
 
     // Entradas do Dia
-    const incomes = getIncomeForDay(currentLoopDate, incomeEntries);
+    const incomes = getIncomeForDay(currentLoopDate, incomeEntries, dateStr);
     const totalIncome = incomes.reduce((sum, i) => sum + i.amount, 0);
 
     // Saídas Fixas do Dia
     const expensesFixed = fixedExpenses
       .filter(e => matchesRecurrence(e, currentLoopDate))
-      .map(e => ({ ...e, type: 'expense', amount: Number(e.amount) }));
+      .map(e => ({ ...e, type: 'expense', amount: Number(e.amount), date: dateStr }));
 
     // Faturas de Cartão (Dinâmico)
     const expensesCards = [];

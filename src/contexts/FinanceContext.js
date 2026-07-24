@@ -19,6 +19,13 @@ import QuickAddModal from '@/components/QuickAddModal/QuickAddModal';
 
 const FinanceContext = createContext({});
 
+const EXCEPTION_TABLE_BY_TYPE = {
+  income: 'income_entry_exceptions',
+  expense: 'fixed_expense_exceptions',
+  card_bill: 'card_bill_exceptions',
+  recurring_daily: 'recurring_daily_entry_exceptions',
+};
+
 // ─── Cache helpers ────────────────────────────────────────────────────────────
 
 const FOCUS_REFRESH_THROTTLE_MS = 20000;
@@ -136,12 +143,12 @@ export function FinanceProvider({ children }) {
         const results = await Promise.allSettled([
           supabase
             .from('income_entries')
-            .select('*, income_entry_tags(tag_id)')
+            .select('*, income_entry_tags(tag_id), income_entry_exceptions(exception_date)')
             .eq('user_id', user.id)
             .order('start_date'),
           supabase
             .from('fixed_expenses')
-            .select('*, fixed_expense_tags(tag_id)')
+            .select('*, fixed_expense_tags(tag_id), fixed_expense_exceptions(exception_date)')
             .eq('user_id', user.id)
             .order('start_date'),
           supabase
@@ -165,7 +172,7 @@ export function FinanceProvider({ children }) {
             .eq('user_id', user.id),
           supabase
             .from('credit_card_bills')
-            .select('*, card_bill_tags(tag_id)')
+            .select('*, card_bill_tags(tag_id), card_bill_exceptions(exception_date)')
             .eq('user_id', user.id)
             .order('start_date'),
           supabase
@@ -175,7 +182,7 @@ export function FinanceProvider({ children }) {
             .order('name'),
           supabase
             .from('recurring_daily_entries')
-            .select('*, recurring_daily_entry_tags(tag_id)')
+            .select('*, recurring_daily_entry_tags(tag_id), recurring_daily_entry_exceptions(exception_date)')
             .eq('user_id', user.id)
             .order('start_date'),
         ]);
@@ -197,18 +204,30 @@ export function FinanceProvider({ children }) {
             [joinKey]: undefined,
           }));
 
+        // Mesma ideia pras exceções de recorrência ("Atualizar somente
+        // esta") — achata em exception_dates: string[].
+        const withFlatExceptions = (rows, joinKey) =>
+          rows.map((r) => ({
+            ...r,
+            exception_dates: (r[joinKey] ?? []).map((j) => j.exception_date),
+            [joinKey]: undefined,
+          }));
+
+        const withRecurrenceExtras = (rows, tagsKey, exceptionsKey) =>
+          withFlatExceptions(withFlatTagIds(rows, tagsKey), exceptionsKey);
+
         const transactionsWithTagIds = withFlatTagIds(extract(4), 'transaction_tags');
 
         const freshData = {
-          incomeEntries: withFlatTagIds(extract(0), 'income_entry_tags'),
-          fixedExpenses: withFlatTagIds(extract(1), 'fixed_expense_tags'),
+          incomeEntries: withRecurrenceExtras(extract(0), 'income_entry_tags', 'income_entry_exceptions'),
+          fixedExpenses: withRecurrenceExtras(extract(1), 'fixed_expense_tags', 'fixed_expense_exceptions'),
           variableExpenses: extract(2),
           cards: extract(3),
           transactions: transactionsWithTagIds,
           verifiedDays: extract(5),
-          cardBills: withFlatTagIds(extract(6), 'card_bill_tags'),
+          cardBills: withRecurrenceExtras(extract(6), 'card_bill_tags', 'card_bill_exceptions'),
           tags: extract(7),
-          recurringDailyEntries: withFlatTagIds(extract(8), 'recurring_daily_entry_tags'),
+          recurringDailyEntries: withRecurrenceExtras(extract(8), 'recurring_daily_entry_tags', 'recurring_daily_entry_exceptions'),
         };
 
         // Safety guard: if every query came back empty it almost certainly
@@ -664,6 +683,37 @@ export function FinanceProvider({ children }) {
     return { error };
   }
 
+  // Marca uma ocorrência específica de um template recorrente como exceção
+  // — usado por "Atualizar/Excluir somente esta" no QuickAddModal. Ao
+  // contrário das tags (que são substituídas por completo a cada salvamento),
+  // exceções só acumulam, uma por edição/exclusão pontual.
+  async function addRecurrenceException(entryType, entryId, exceptionDate) {
+    if (!supabase || !user) return { error: 'Not configured' };
+    const table = EXCEPTION_TABLE_BY_TYPE[entryType];
+    if (!table) return { error: `Tipo de recorrência desconhecido: ${entryType}` };
+
+    const { error } = await supabase
+      .from(table)
+      .insert({ entry_id: entryId, exception_date: exceptionDate, user_id: user.id });
+    if (error) return { error };
+
+    const appendException = (setter) =>
+      setter((p) =>
+        p.map((e) =>
+          e.id === entryId
+            ? { ...e, exception_dates: [...(e.exception_dates || []), exceptionDate] }
+            : e
+        )
+      );
+
+    if (entryType === 'income') appendException(setIncomeEntries);
+    else if (entryType === 'expense') appendException(setFixedExpenses);
+    else if (entryType === 'card_bill') appendException(setCardBills);
+    else if (entryType === 'recurring_daily') appendException(setRecurringDailyEntries);
+
+    return { error: null };
+  }
+
   // Grava o conjunto de tags de uma transação, substituindo o anterior por
   // completo (delete + insert é mais simples que diff e o volume por
   // lançamento é sempre pequeno).
@@ -1041,6 +1091,7 @@ export function FinanceProvider({ children }) {
     addRecurringDailyEntry,
     updateRecurringDailyEntry,
     deleteRecurringDailyEntry,
+    addRecurrenceException,
     addTransaction,
     updateTransaction,
     deleteTransaction,

@@ -5,8 +5,9 @@ import styles from './QuickAddModal.module.css';
 import { useFinance } from '@/contexts/FinanceContext';
 import TagPicker from '@/components/TagPicker/TagPicker';
 import QuantityStepper from './QuantityStepper';
+import RecurrenceScopeModal from '@/components/RecurrenceScopeModal/RecurrenceScopeModal';
 import { useBackButtonClose } from '@/hooks/useBackButtonClose';
-import { buildRecurrencePayload, diffMonths, diffDays } from '@/lib/recurrence';
+import { buildRecurrencePayload, diffMonths, diffDays, addDays } from '@/lib/recurrence';
 import { formatCurrency } from '@/lib/utils';
 
 const FULL_FREQUENCY_OPTIONS = [
@@ -40,6 +41,7 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
     addRecurringDailyEntry, updateRecurringDailyEntry, deleteRecurringDailyEntry,
     updateTransaction, updateFixedExpense, updateIncomeEntry,
     deleteTransaction, deleteFixedExpense, deleteIncomeEntry,
+    addRecurrenceException,
     cards
   } = useFinance();
 
@@ -59,6 +61,8 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isScopeModalOpen, setScopeModalOpen] = useState(false);
+  const [scopeContext, setScopeContext] = useState('edit'); // 'edit' | 'delete'
   const amountInputRef = useRef(null);
 
   useEffect(() => {
@@ -91,17 +95,21 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
           setCount(2);
         } else {
           // income_entries / fixed_expenses / recurring_daily_entries —
-          // todos usam start_date/end_date/frequency.
+          // todos usam start_date/end_date/frequency. Prefere a data da
+          // OCORRÊNCIA clicada (editData.date, vinda do dia específico que
+          // o usuário abriu) sobre o start_date original do template —
+          // isso é o que permite "atualizar esta e as próximas" a partir
+          // de qualquer ponto da série, não só do início.
           const freq = editData.frequency || 'none';
-          const startDate = editData.start_date;
+          const effectiveStartDate = editData.date || editData.start_date;
           const endDate = editData.end_date;
           const rawAmount = Number(editData.amount) || 0;
 
-          setDate(startDate || new Date().toISOString().split('T')[0]);
+          setDate(effectiveStartDate || new Date().toISOString().split('T')[0]);
           setFrequency(freq);
 
           if (freq === 'installment') {
-            const n = startDate && endDate ? diffMonths(startDate, endDate) + 1 : 2;
+            const n = effectiveStartDate && endDate ? diffMonths(effectiveStartDate, endDate) + 1 : 2;
             setCount(Math.max(n, 2));
             setEndMode('count');
             // O valor digitado originalmente era o TOTAL — reconstrói pra edição.
@@ -112,9 +120,9 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
             setCount(2);
           } else {
             let n;
-            if (freq === 'monthly') n = diffMonths(startDate, endDate) + 1;
-            else if (freq === 'weekly') n = Math.round(diffDays(startDate, endDate) / 7) + 1;
-            else n = diffDays(startDate, endDate) + 1; // daily
+            if (freq === 'monthly') n = diffMonths(effectiveStartDate, endDate) + 1;
+            else if (freq === 'weekly') n = Math.round(diffDays(effectiveStartDate, endDate) / 7) + 1;
+            else n = diffDays(effectiveStartDate, endDate) + 1; // daily
             setCount(Math.max(n, 2));
             setEndMode('count');
             setAmount(rawAmount.toString());
@@ -148,8 +156,55 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
     }
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault();
+  // income/expense sempre vivem numa tabela de template — "recorrente" pra
+  // elas é qualquer frequency != 'none'. diario/saving só são template
+  // quando isTemplate (senão é lançamento avulso comum). Cartão nunca passa
+  // por aqui (edição de fatura recorrente não é suportada por este modal).
+  function isRecurringEdit() {
+    if (!editData) return false;
+    if (type === 'income' || type === 'expense') {
+      return !!editData.frequency && editData.frequency !== 'none';
+    }
+    if (type === 'diario' || type === 'saving') {
+      return !!editData.isTemplate;
+    }
+    return false;
+  }
+
+  function getTemplateFns(forType) {
+    if (forType === 'income') {
+      return { entryType: 'income', add: addIncomeEntry, update: updateIncomeEntry, remove: deleteIncomeEntry };
+    }
+    if (forType === 'expense') {
+      return { entryType: 'expense', add: addFixedExpense, update: updateFixedExpense, remove: deleteFixedExpense };
+    }
+    return { entryType: 'recurring_daily', add: addRecurringDailyEntry, update: updateRecurringDailyEntry, remove: deleteRecurringDailyEntry };
+  }
+
+  // "Somente esta": marca a ocorrência original como exceção (some da série)
+  // e cria um lançamento avulso (frequency 'none') só nessa data, já com os
+  // valores editados.
+  async function saveOnlyThisOccurrence({ entryType, add, base }) {
+    const occurrenceDate = editData.date || editData.start_date;
+    const { error: excError } = await addRecurrenceException(entryType, editData.id, occurrenceDate);
+    if (excError) return { error: excError };
+    return add({ ...base, frequency: 'none', start_date: date, end_date: date });
+  }
+
+  // "Esta e as próximas": se for a primeira ocorrência da série, é só uma
+  // edição normal do template inteiro. Senão, trunca o original até o dia
+  // anterior (preserva o passado) e cria um novo template a partir daqui.
+  async function saveThisAndFuture({ add, update, base, recurrencePayload }) {
+    const occurrenceDate = date;
+    if (occurrenceDate === editData.start_date) {
+      return update(editData.id, { ...base, ...recurrencePayload });
+    }
+    const truncateResult = await update(editData.id, { end_date: addDays(occurrenceDate, -1) });
+    if (truncateResult.error) return truncateResult;
+    return add({ ...base, ...recurrencePayload });
+  }
+
+  async function performSave(scopeChoice) {
     setIsSubmitting(true);
 
     const val = parseFloat(amount.replace(',', '.'));
@@ -158,25 +213,20 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
     let result;
 
     try {
-      if (type === 'income') {
-        const payload = {
-          description,
-          amount: finalAmount,
-          is_active: true,
-          tagIds,
-          ...buildRecurrencePayload({ frequency, endMode, count, date }),
-        };
-        result = isEdit ? await updateIncomeEntry(editData.id, payload) : await addIncomeEntry(payload);
-      }
-      else if (type === 'expense') {
-        const payload = {
-          description,
-          amount: finalAmount,
-          is_active: true,
-          tagIds,
-          ...buildRecurrencePayload({ frequency, endMode, count, date }),
-        };
-        result = isEdit ? await updateFixedExpense(editData.id, payload) : await addFixedExpense(payload);
+      if (type === 'income' || type === 'expense') {
+        const { entryType, add, update } = getTemplateFns(type);
+        const base = { description, amount: finalAmount, is_active: true, tagIds };
+        const recurrencePayload = buildRecurrencePayload({ frequency, endMode, count, date });
+
+        if (!isEdit || !scopeChoice) {
+          result = isEdit
+            ? await update(editData.id, { ...base, ...recurrencePayload })
+            : await add({ ...base, ...recurrencePayload });
+        } else if (scopeChoice === 'only') {
+          result = await saveOnlyThisOccurrence({ entryType, add, base });
+        } else {
+          result = await saveThisAndFuture({ add, update, base, recurrencePayload });
+        }
       }
       else if (type === 'diario' || type === 'saving') {
         const targetsTemplate = isEdit ? editData.isTemplate : frequency !== 'none';
@@ -190,17 +240,25 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
           };
           result = isEdit ? await updateTransaction(editData.id, payload) : await addTransaction(payload);
         } else {
-          const payload = {
+          const { entryType, add, update } = getTemplateFns(type);
+          const base = {
             kind: type === 'saving' ? 'saving' : 'daily',
             description,
             amount: finalAmount,
             is_active: true,
             tagIds,
-            ...buildRecurrencePayload({ frequency, endMode, count, date }),
           };
-          result = isEdit
-            ? await updateRecurringDailyEntry(editData.id, payload)
-            : await addRecurringDailyEntry(payload);
+          const recurrencePayload = buildRecurrencePayload({ frequency, endMode, count, date });
+
+          if (!isEdit || !scopeChoice) {
+            result = isEdit
+              ? await update(editData.id, { ...base, ...recurrencePayload })
+              : await add({ ...base, ...recurrencePayload });
+          } else if (scopeChoice === 'only') {
+            result = await saveOnlyThisOccurrence({ entryType, add, base });
+          } else {
+            result = await saveThisAndFuture({ add, update, base, recurrencePayload });
+          }
         }
       }
       else if (type === 'card') {
@@ -258,26 +316,40 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
       alert('Erro ao salvar. Verifique sua conexão.');
     } finally {
       setIsSubmitting(false);
+      setScopeModalOpen(false);
     }
   }
 
-  async function handleDelete() {
-    if (!editData) return;
-    if (!confirm('Tem certeza que deseja excluir este lançamento?')) return;
+  async function performRecurringDelete({ entryType, update, remove, scopeChoice }) {
+    const occurrenceDate = editData.date || editData.start_date;
+    if (scopeChoice === 'only') {
+      return addRecurrenceException(entryType, editData.id, occurrenceDate);
+    }
+    // 'future'
+    if (occurrenceDate === editData.start_date) {
+      return remove(editData.id);
+    }
+    return update(editData.id, { end_date: addDays(occurrenceDate, -1) });
+  }
 
+  async function performDelete(scopeChoice) {
     setIsDeleting(true);
     try {
       let result;
       if (type === 'card') {
         result = await deleteTransaction(editData.id);
       } else if (type === 'diario' || type === 'saving') {
-        result = editData.isTemplate
-          ? await deleteRecurringDailyEntry(editData.id)
-          : await deleteTransaction(editData.id);
-      } else if (type === 'expense') {
-        result = await deleteFixedExpense(editData.id);
-      } else if (type === 'income') {
-        result = await deleteIncomeEntry(editData.id);
+        if (!editData.isTemplate) {
+          result = await deleteTransaction(editData.id);
+        } else if (scopeChoice) {
+          result = await performRecurringDelete({ ...getTemplateFns(type), scopeChoice });
+        } else {
+          result = await deleteRecurringDailyEntry(editData.id);
+        }
+      } else if (type === 'expense' || type === 'income') {
+        result = scopeChoice
+          ? await performRecurringDelete({ ...getTemplateFns(type), scopeChoice })
+          : await (type === 'expense' ? deleteFixedExpense(editData.id) : deleteIncomeEntry(editData.id));
       }
 
       if (result?.error) {
@@ -292,7 +364,34 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
       alert('Erro ao excluir. Verifique sua conexão.');
     } finally {
       setIsDeleting(false);
+      setScopeModalOpen(false);
     }
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (isRecurringEdit()) {
+      setScopeContext('edit');
+      setScopeModalOpen(true);
+      return;
+    }
+    await performSave(null);
+  }
+
+  async function handleDelete() {
+    if (!editData) return;
+    if (isRecurringEdit()) {
+      setScopeContext('delete');
+      setScopeModalOpen(true);
+      return;
+    }
+    if (!confirm('Tem certeza que deseja excluir este lançamento?')) return;
+    await performDelete(null);
+  }
+
+  async function handleScopeChoice(choice) {
+    if (scopeContext === 'edit') await performSave(choice);
+    else await performDelete(choice);
   }
 
   // Repetição só é editável em: lançamento novo, entrada/saída (sempre
@@ -409,6 +508,15 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
           </div>
         </form>
       </div>
+
+      <RecurrenceScopeModal
+        isOpen={isScopeModalOpen}
+        onClose={() => setScopeModalOpen(false)}
+        onChooseOnly={() => handleScopeChoice('only')}
+        onChooseFuture={() => handleScopeChoice('future')}
+        actionLabel={scopeContext === 'delete' ? 'Excluir' : 'Atualizar'}
+        loading={isSubmitting || isDeleting}
+      />
     </div>
   );
 }
