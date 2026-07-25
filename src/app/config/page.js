@@ -16,20 +16,18 @@ export default function ConfigPage() {
   const { user, profile, updateProfile, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const {
-    incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, tags,
-    addIncomeEntry, updateIncomeEntry, deleteIncomeEntry,
-    addFixedExpense, updateFixedExpense, deleteFixedExpense,
-    addVariableExpense, updateVariableExpense, deleteVariableExpense,
+    movements, variableExpenses, cards, tags,
+    addMovement, deleteMovement,
+    addVariableExpense, deleteVariableExpense,
     addCard, deleteCard, deleteTag, resetAccount,
   } = useFinance();
 
   const [activeTab, setActiveTab] = useState('geral');
-  const [editingId, setEditingId] = useState(null);
 
   // General settings form
-  const [initialBalance, setInitialBalance] = useState(profile?.initial_balance || 0);
-  const [cycleStartDay, setCycleStartDay] = useState(profile?.cycle_start_day || 1);
-  const [showDailyForecast, setShowDailyForecast] = useState(profile?.show_daily_forecast !== false);
+  const [initialBalance, setInitialBalance] = useState(profile?.saldo_inicial || 0);
+  const [cycleStartDay, setCycleStartDay] = useState(profile?.dia_inicio_ciclo || 1);
+  const [showDailyForecast, setShowDailyForecast] = useState(profile?.mostrar_previsao_diaria !== false);
 
   // Entry forms
   const [formData, setFormData] = useState({});
@@ -41,11 +39,18 @@ export default function ConfigPage() {
   const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
+  const incomeEntries = movements
+    .filter((m) => m.tipo === 'income')
+    .sort((a, b) => a.data_inicio.localeCompare(b.data_inicio));
+  const fixedExpenses = movements
+    .filter((m) => m.tipo === 'expense')
+    .sort((a, b) => a.data_inicio.localeCompare(b.data_inicio));
+
   async function handleSaveGeneral() {
     await updateProfile({
-      initial_balance: Number(initialBalance),
-      cycle_start_day: Number(cycleStartDay),
-      show_daily_forecast: showDailyForecast,
+      saldo_inicial: Number(initialBalance),
+      dia_inicio_ciclo: Number(cycleStartDay),
+      mostrar_previsao_diaria: showDailyForecast,
     });
   }
 
@@ -57,40 +62,42 @@ export default function ConfigPage() {
       case 'income': {
         const now = new Date();
         const startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(Number(entry.due_day)).padStart(2, '0')}`;
-        result = await addIncomeEntry({
-          description: entry.description,
-          amount: Number(entry.amount),
-          frequency: 'monthly',
-          start_date: startDate,
-          end_date: null,
-          is_active: true
+        result = await addMovement({
+          tipo: 'income',
+          descricao: entry.description,
+          valor: Number(entry.amount),
+          frequencia: 'monthly',
+          data_inicio: startDate,
+          data_fim: null,
+          ativo: true
         });
         break;
       }
       case 'fixed': {
         const now = new Date();
         const startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(Number(entry.due_day)).padStart(2, '0')}`;
-        result = await addFixedExpense({
-          description: entry.description,
-          amount: Number(entry.amount),
-          frequency: 'monthly',
-          start_date: startDate,
-          end_date: null, // por padrão, recorrente sem fim
-          is_active: true
+        result = await addMovement({
+          tipo: 'expense',
+          descricao: entry.description,
+          valor: Number(entry.amount),
+          frequencia: 'monthly',
+          data_inicio: startDate,
+          data_fim: null, // por padrão, recorrente sem fim
+          ativo: true
         });
         break;
       }
       case 'variable':
         result = await addVariableExpense({
-          description: entry.description,
-          monthly_amount: Number(entry.monthly_amount),
+          descricao: entry.description,
+          valor_mensal: Number(entry.monthly_amount),
         });
         break;
       case 'card':
         result = await addCard({
-          name: entry.card_name,
-          description: entry.description || null,
-          closing_day: Number(entry.closing_day),
+          nome: entry.card_name,
+          descricao: entry.description || null,
+          dia_fechamento: Number(entry.closing_day),
         });
         break;
     }
@@ -105,8 +112,8 @@ export default function ConfigPage() {
   async function handleDelete(type, id) {
     if (!confirm('Deseja remover este item?')) return;
     switch (type) {
-      case 'income': await deleteIncomeEntry(id); break;
-      case 'fixed': await deleteFixedExpense(id); break;
+      case 'income': await deleteMovement(id); break;
+      case 'fixed': await deleteMovement(id); break;
       case 'variable': await deleteVariableExpense(id); break;
       case 'card': await deleteCard(id); break;
       case 'tag': await deleteTag(id); break;
@@ -129,9 +136,9 @@ export default function ConfigPage() {
         return;
       }
       await updateProfile({
-        initial_balance: 0,
-        cycle_start_day: 1,
-        show_daily_forecast: true,
+        saldo_inicial: 0,
+        dia_inicio_ciclo: 1,
+        mostrar_previsao_diaria: true,
       });
       setInitialBalance(0);
       setCycleStartDay(1);
@@ -178,8 +185,8 @@ export default function ConfigPage() {
   ];
 
   const totalVariaveis = variableExpenses
-    .filter((e) => e.is_active !== false)
-    .reduce((sum, e) => sum + Number(e.monthly_amount || 0), 0);
+    .filter((e) => e.ativo !== false)
+    .reduce((sum, e) => sum + Number(e.valor_mensal || 0), 0);
 
   const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
   const dailyAmount = totalVariaveis / (daysInMonth || 30);
@@ -273,9 +280,9 @@ export default function ConfigPage() {
 
               {tags.map((tag) => (
                 <div key={tag.id} className={styles.listItem}>
-                  <span className={styles.tagDot} style={{ background: tag.color }} />
+                  <span className={styles.tagDot} style={{ background: tag.cor }} />
                   <div className={styles.listInfo}>
-                    <span className={styles.listName}>{tag.name}</span>
+                    <span className={styles.listName}>{tag.nome}</span>
                   </div>
                   <button className={styles.deleteBtn} onClick={() => handleDelete('tag', tag.id)}>
                     ✕
@@ -293,10 +300,10 @@ export default function ConfigPage() {
             {/* CONTA (migrado de Menu) */}
             <div className={`card ${styles.userCard}`}>
               <div className={styles.avatar}>
-                {(profile?.name || user?.email || '?')[0].toUpperCase()}
+                {(profile?.nome || user?.email || '?')[0].toUpperCase()}
               </div>
               <div className={styles.userInfo}>
-                <span className={styles.userName}>{profile?.name || 'Usuário'}</span>
+                <span className={styles.userName}>{profile?.nome || 'Usuário'}</span>
                 <span className={styles.userEmail}>{user?.email}</span>
               </div>
             </div>
@@ -370,11 +377,11 @@ export default function ConfigPage() {
               {incomeEntries.map((entry) => (
                 <div key={entry.id} className={styles.listItem}>
                   <div className={styles.listInfo}>
-                    <span className={styles.listName}>{entry.description}</span>
-                    <span className={styles.listMeta}>Dia {new Date(entry.start_date + 'T12:00:00').getDate()}</span>
+                    <span className={styles.listName}>{entry.descricao}</span>
+                    <span className={styles.listMeta}>Dia {new Date(entry.data_inicio + 'T12:00:00').getDate()}</span>
                   </div>
                   <span className={`${styles.listAmount} currency-positive`}>
-                    {formatCurrency(entry.amount)}
+                    {formatCurrency(entry.valor)}
                   </span>
                   <button className={styles.deleteBtn} onClick={() => handleDelete('income', entry.id)}>
                     ✕
@@ -431,11 +438,11 @@ export default function ConfigPage() {
               {fixedExpenses.map((entry) => (
                 <div key={entry.id} className={styles.listItem}>
                   <div className={styles.listInfo}>
-                    <span className={styles.listName}>{entry.description}</span>
-                    <span className={styles.listMeta}>Dia {new Date(entry.start_date + 'T12:00:00').getDate()}</span>
+                    <span className={styles.listName}>{entry.descricao}</span>
+                    <span className={styles.listMeta}>Dia {new Date(entry.data_inicio + 'T12:00:00').getDate()}</span>
                   </div>
                   <span className={`${styles.listAmount} currency-negative`}>
-                    {formatCurrency(entry.amount)}
+                    {formatCurrency(entry.valor)}
                   </span>
                   <button className={styles.deleteBtn} onClick={() => handleDelete('fixed', entry.id)}>
                     ✕
@@ -503,10 +510,10 @@ export default function ConfigPage() {
               {variableExpenses.map((entry) => (
                 <div key={entry.id} className={styles.listItem}>
                   <div className={styles.listInfo}>
-                    <span className={styles.listName}>{entry.description}</span>
+                    <span className={styles.listName}>{entry.descricao}</span>
                   </div>
                   <span className={styles.listAmount}>
-                    {formatCurrency(entry.monthly_amount)}/mês
+                    {formatCurrency(entry.valor_mensal)}/mês
                   </span>
                   <button className={styles.deleteBtn} onClick={() => handleDelete('variable', entry.id)}>
                     ✕
@@ -556,10 +563,10 @@ export default function ConfigPage() {
               {cards.map((card) => (
                 <div key={card.id} className={styles.listItem}>
                   <div className={styles.listInfo}>
-                    <span className={styles.listName}>💳 {card.name}</span>
+                    <span className={styles.listName}>💳 {card.nome}</span>
                     <span className={styles.listMeta}>
-                      Fechamento: dia {card.closing_day}
-                      {card.description && ` · ${card.description}`}
+                      Fechamento: dia {card.dia_fechamento}
+                      {card.descricao && ` · ${card.descricao}`}
                     </span>
                   </div>
                   <button className={styles.deleteBtn} onClick={() => handleDelete('card', card.id)}>

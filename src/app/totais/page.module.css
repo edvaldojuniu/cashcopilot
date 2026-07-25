@@ -95,6 +95,12 @@
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-md);
   padding: var(--space-sm) var(--space-md);
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.tagRow:hover {
+  border-color: var(--accent-primary);
 }
 
 .tagRowHeader {

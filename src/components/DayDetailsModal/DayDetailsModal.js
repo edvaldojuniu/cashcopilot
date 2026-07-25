@@ -26,12 +26,13 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
 
   // Separate components for easier rendering
   const fixedExpenses = expenses.filter(e => e.type !== 'card');
-  const cardExpenses = expenses.filter(e => e.type === 'card');
+  const cardExpenses = expenses.filter(e => e.type === 'card'); // fatura/parcela (lump sum, só no dia de fechamento)
+  const cardTxns = transactions.filter(t => t.type === 'card'); // compras avulsas no cartão neste dia
   const dailyTxns = transactions.filter(t => t.type === 'daily');
   const savingTxns = transactions.filter(t => t.type === 'saving');
 
   const isEmpty = incomes.length === 0 && fixedExpenses.length === 0 && cardExpenses.length === 0
-    && dailyTxns.length === 0 && savingTxns.length === 0
+    && cardTxns.length === 0 && dailyTxns.length === 0 && savingTxns.length === 0
     && recurringDaily.length === 0 && recurringSavings.length === 0;
 
   const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -146,11 +147,11 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
                   </div>
                 )}
 
-                {transactions.filter(t => t.type === 'card').length > 0 && (
+                {cardTxns.length > 0 && (
                   <div className={styles.group}>
                     <div className={styles.groupTitle}>Compras no Cartão (Neste dia)</div>
                     <div className={styles.itemList}>
-                      {transactions.filter(t => t.type === 'card').map((txn, i) => (
+                      {cardTxns.map((txn, i) => (
                         <div
                           key={`crd-txn-${i}`}
                           className={`${styles.item} ${styles.itemClickable}`}

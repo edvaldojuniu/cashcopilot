@@ -19,18 +19,14 @@ import QuickAddModal from '@/components/QuickAddModal/QuickAddModal';
 
 const FinanceContext = createContext({});
 
-const EXCEPTION_TABLE_BY_TYPE = {
-  income: 'income_entry_exceptions',
-  expense: 'fixed_expense_exceptions',
-  card_bill: 'card_bill_exceptions',
-  recurring_daily: 'recurring_daily_entry_exceptions',
-};
-
 // ─── Cache helpers ────────────────────────────────────────────────────────────
 
 const FOCUS_REFRESH_THROTTLE_MS = 20000;
 
-const CACHE_VERSION = 'v1';
+// v2: schema unificado (movimentacoes) — muda o formato do blob salvo, então
+// um cache antigo (v1, 5 arrays de movimento separados) precisa ser
+// ignorado, nunca interpretado com o formato errado.
+const CACHE_VERSION = 'v2';
 const getCacheKey = (userId) => `cc_finance_${userId}_${CACHE_VERSION}`;
 
 function saveToCache(userId, data) {
@@ -59,15 +55,11 @@ function clearCache(userId) {
 export function FinanceProvider({ children }) {
   const { user, profile, loading: authLoading, sessionReady } = useAuth();
 
-  const [incomeEntries, setIncomeEntries] = useState([]);
-  const [fixedExpenses, setFixedExpenses] = useState([]);
+  const [movements, setMovements] = useState([]);
   const [variableExpenses, setVariableExpenses] = useState([]);
   const [cards, setCards] = useState([]);
-  const [cardBills, setCardBills] = useState([]);
-  const [transactions, setTransactions] = useState([]);
   const [verifiedDays, setVerifiedDays] = useState([]);
   const [tags, setTags] = useState([]);
-  const [recurringDailyEntries, setRecurringDailyEntries] = useState([]);
 
   // loading starts false — AuthContext already handles the global loading gate.
   // FinanceContext only shows its own loading spinner while actively fetching
@@ -88,27 +80,19 @@ export function FinanceProvider({ children }) {
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   function applyData(data) {
-    setIncomeEntries(data.incomeEntries ?? []);
-    setFixedExpenses(data.fixedExpenses ?? []);
+    setMovements(data.movements ?? []);
     setVariableExpenses(data.variableExpenses ?? []);
     setCards(data.cards ?? []);
-    setTransactions(data.transactions ?? []);
     setVerifiedDays(data.verifiedDays ?? []);
-    setCardBills(data.cardBills ?? []);
     setTags(data.tags ?? []);
-    setRecurringDailyEntries(data.recurringDailyEntries ?? []);
   }
 
   function clearData() {
-    setIncomeEntries([]);
-    setFixedExpenses([]);
+    setMovements([]);
     setVariableExpenses([]);
     setCards([]);
-    setCardBills([]);
-    setTransactions([]);
     setVerifiedDays([]);
     setTags([]);
-    setRecurringDailyEntries([]);
     setLoading(false);
     isFetchingRef.current = false;
     loadedUserIdRef.current = null;
@@ -142,49 +126,36 @@ export function FinanceProvider({ children }) {
 
         const results = await Promise.allSettled([
           supabase
-            .from('income_entries')
-            .select('*, income_entry_tags(tag_id), income_entry_exceptions(exception_date)')
-            .eq('user_id', user.id)
-            .order('start_date'),
+            .from('movimentacoes')
+            .select('*, movimentacao_etiquetas(etiqueta_id)')
+            .eq('usuario_id', user.id)
+            .order('data_inicio'),
           supabase
-            .from('fixed_expenses')
-            .select('*, fixed_expense_tags(tag_id), fixed_expense_exceptions(exception_date)')
-            .eq('user_id', user.id)
-            .order('start_date'),
-          supabase
-            .from('variable_expenses')
+            .from('gastos_variaveis')
             .select('*')
-            .eq('user_id', user.id)
-            .order('description'),
+            .eq('usuario_id', user.id)
+            .order('descricao'),
           supabase
-            .from('cards')
+            .from('cartoes')
             .select('*')
-            .eq('user_id', user.id)
-            .order('name'),
+            .eq('usuario_id', user.id)
+            .order('nome'),
           supabase
-            .from('daily_transactions')
-            .select('*, transaction_tags(tag_id)')
-            .eq('user_id', user.id)
-            .order('date'),
-          supabase
-            .from('verified_days')
+            .from('dias_verificados')
             .select('*')
-            .eq('user_id', user.id),
+            .eq('usuario_id', user.id),
           supabase
-            .from('credit_card_bills')
-            .select('*, card_bill_tags(tag_id), card_bill_exceptions(exception_date)')
-            .eq('user_id', user.id)
-            .order('start_date'),
-          supabase
-            .from('tags')
+            .from('etiquetas')
             .select('*')
-            .eq('user_id', user.id)
-            .order('name'),
-          supabase
-            .from('recurring_daily_entries')
-            .select('*, recurring_daily_entry_tags(tag_id), recurring_daily_entry_exceptions(exception_date)')
-            .eq('user_id', user.id)
-            .order('start_date'),
+            .eq('usuario_id', user.id)
+            .order('nome'),
+          // Exceções de recorrência ("Atualizar/Excluir somente esta") numa
+          // query PRÓPRIA, nunca embutida na query de movimentacoes acima:
+          // se por algum motivo essa tabela não existir, o Postgrest
+          // rejeitaria a query INTEIRA (mãe + join), esvaziando
+          // silenciosamente todas as movimentações na tela. Em queries
+          // separadas, só a exceção (recurso à parte) fica de fora.
+          supabase.from('movimentacao_excecoes').select('movimentacao_id, data_excecao').eq('usuario_id', user.id),
         ]);
 
         const extract = (i) => {
@@ -194,40 +165,34 @@ export function FinanceProvider({ children }) {
             : [];
         };
 
-        // Achata a relação N:N de tags (transaction_tags / *_tags) em um
-        // array simples tag_ids, para o resto do app não lidar com o shape
+        // Achata a relação N:N de tags (movimentacao_etiquetas) em um array
+        // simples tag_ids, para o resto do app não lidar com o shape
         // aninhado do Supabase.
-        const withFlatTagIds = (rows, joinKey) =>
+        const withFlatTagIds = (rows) =>
           rows.map((r) => ({
             ...r,
-            tag_ids: (r[joinKey] ?? []).map((j) => j.tag_id),
-            [joinKey]: undefined,
+            tag_ids: (r.movimentacao_etiquetas ?? []).map((j) => j.etiqueta_id),
+            movimentacao_etiquetas: undefined,
           }));
 
-        // Mesma ideia pras exceções de recorrência ("Atualizar somente
-        // esta") — achata em exception_dates: string[].
-        const withFlatExceptions = (rows, joinKey) =>
-          rows.map((r) => ({
-            ...r,
-            exception_dates: (r[joinKey] ?? []).map((j) => j.exception_date),
-            [joinKey]: undefined,
-          }));
-
-        const withRecurrenceExtras = (rows, tagsKey, exceptionsKey) =>
-          withFlatExceptions(withFlatTagIds(rows, tagsKey), exceptionsKey);
-
-        const transactionsWithTagIds = withFlatTagIds(extract(4), 'transaction_tags');
+        // Agrupa a lista plana de exceções por movimentacao_id, e anexa
+        // exception_dates: string[] em cada linha.
+        const withExceptions = (rows, exceptionRows) => {
+          const byMovId = new Map();
+          exceptionRows.forEach((ex) => {
+            const list = byMovId.get(ex.movimentacao_id) ?? [];
+            list.push(ex.data_excecao);
+            byMovId.set(ex.movimentacao_id, list);
+          });
+          return rows.map((r) => ({ ...r, exception_dates: byMovId.get(r.id) ?? [] }));
+        };
 
         const freshData = {
-          incomeEntries: withRecurrenceExtras(extract(0), 'income_entry_tags', 'income_entry_exceptions'),
-          fixedExpenses: withRecurrenceExtras(extract(1), 'fixed_expense_tags', 'fixed_expense_exceptions'),
-          variableExpenses: extract(2),
-          cards: extract(3),
-          transactions: transactionsWithTagIds,
-          verifiedDays: extract(5),
-          cardBills: withRecurrenceExtras(extract(6), 'card_bill_tags', 'card_bill_exceptions'),
-          tags: extract(7),
-          recurringDailyEntries: withRecurrenceExtras(extract(8), 'recurring_daily_entry_tags', 'recurring_daily_entry_exceptions'),
+          movements: withExceptions(withFlatTagIds(extract(0)), extract(5)),
+          variableExpenses: extract(1),
+          cards: extract(2),
+          verifiedDays: extract(3),
+          tags: extract(4),
         };
 
         // Safety guard: if every query came back empty it almost certainly
@@ -235,17 +200,13 @@ export function FinanceProvider({ children }) {
         // race on page refresh).  Don't overwrite good cached data with an
         // empty result — just silently discard it and let the cache stand.
         // This is safe because a genuine "user has zero records" state is
-        // extremely unlikely across ALL nine tables simultaneously.
+        // extremely unlikely across all five tables simultaneously.
         const totalRecords =
-          freshData.incomeEntries.length +
-          freshData.fixedExpenses.length +
+          freshData.movements.length +
           freshData.variableExpenses.length +
           freshData.cards.length +
-          freshData.transactions.length +
           freshData.verifiedDays.length +
-          freshData.cardBills.length +
-          freshData.tags.length +
-          freshData.recurringDailyEntries.length;
+          freshData.tags.length;
 
         const hasCachedData = !!loadFromCache(user.id);
 
@@ -344,86 +305,65 @@ export function FinanceProvider({ children }) {
 
     // Don't overwrite a warm cache with an empty slate (e.g. during logout).
     const hasAnyData =
-      incomeEntries.length > 0 ||
-      fixedExpenses.length > 0 ||
+      movements.length > 0 ||
       variableExpenses.length > 0 ||
       cards.length > 0 ||
-      transactions.length > 0 ||
       verifiedDays.length > 0 ||
-      cardBills.length > 0 ||
-      tags.length > 0 ||
-      recurringDailyEntries.length > 0;
+      tags.length > 0;
 
     if (!hasAnyData) return;
 
     saveToCache(user.id, {
-      incomeEntries,
-      fixedExpenses,
+      movements,
       variableExpenses,
       cards,
-      transactions,
       verifiedDays,
-      cardBills,
       tags,
-      recurringDailyEntries,
     });
-  }, [
-    incomeEntries,
-    fixedExpenses,
-    variableExpenses,
-    cards,
-    transactions,
-    verifiedDays,
-    cardBills,
-    tags,
-    recurringDailyEntries,
-  ]);
+  }, [movements, variableExpenses, cards, verifiedDays, tags]);
 
-  // ─── CRUD ─────────────────────────────────────────────────────────────────
+  // ─── CRUD — Movimentações ───────────────────────────────────────────────────
 
-  // Grava o conjunto de tags de um template recorrente (entrada, saída
-  // fixa, fatura de cartão ou diário/economia recorrente), substituindo o
-  // anterior por completo — mesmo padrão de setTransactionTags, generalizado
-  // pra qualquer uma das 4 tabelas de junção dedicadas.
-  async function setEntryTags(junctionTable, entryId, tagIds = []) {
+  // Grava o conjunto de tags de uma movimentação, substituindo o anterior
+  // por completo (delete + insert é mais simples que diff, e o volume por
+  // lançamento é sempre pequeno).
+  async function setMovementTags(movementId, tagIds = []) {
     if (!supabase) return { error: 'Not configured' };
-    await supabase.from(junctionTable).delete().eq('entry_id', entryId);
+    await supabase.from('movimentacao_etiquetas').delete().eq('movimentacao_id', movementId);
     if (tagIds.length > 0) {
-      const { error } = await supabase.from(junctionTable).insert(
-        tagIds.map((tagId) => ({ entry_id: entryId, tag_id: tagId, user_id: user.id }))
+      const { error } = await supabase.from('movimentacao_etiquetas').insert(
+        tagIds.map((tagId) => ({ movimentacao_id: movementId, etiqueta_id: tagId, usuario_id: user.id }))
       );
       if (error) return { error };
     }
     return { error: null };
   }
 
-  async function addIncomeEntry(entry) {
+  async function addMovement(entry) {
     if (!supabase) return { error: 'Not configured' };
     const { tagIds, ...rest } = entry;
     const { data, error } = await supabase
-      .from('income_entries')
-      .insert({ ...rest, user_id: user.id })
+      .from('movimentacoes')
+      .insert({ ...rest, usuario_id: user.id })
       .select()
       .single();
     if (error) return { data, error };
 
     if (tagIds && tagIds.length > 0) {
-      const { error: tagError } = await setEntryTags('income_entry_tags', data.id, tagIds);
+      const { error: tagError } = await setMovementTags(data.id, tagIds);
       if (tagError) return { data, error: tagError };
     }
 
     const withTags = { ...data, tag_ids: tagIds ?? [] };
-    setIncomeEntries((p) =>
-      [...p, withTags].sort((a, b) => a.start_date.localeCompare(b.start_date))
-    );
+    setMovements((p) => [...p, withTags]);
     return { data: withTags, error: null };
   }
 
-  async function updateIncomeEntry(id, updates) {
+  async function updateMovement(id, updates) {
     if (!supabase) return { error: 'Not configured' };
     const { tagIds, ...rest } = updates;
     const { data, error } = await supabase
-      .from('income_entries')
+      .from('movimentacoes')
       .update(rest)
       .eq('id', id)
       .select()
@@ -432,88 +372,55 @@ export function FinanceProvider({ children }) {
 
     let finalTagIds = tagIds;
     if (tagIds !== undefined) {
-      const { error: tagError } = await setEntryTags('income_entry_tags', id, tagIds);
+      const { error: tagError } = await setMovementTags(id, tagIds);
       if (tagError) return { data, error: tagError };
     } else {
-      finalTagIds = incomeEntries.find((e) => e.id === id)?.tag_ids ?? [];
+      finalTagIds = movements.find((m) => m.id === id)?.tag_ids ?? [];
     }
 
     const withTags = { ...data, tag_ids: finalTagIds };
-    setIncomeEntries((p) => p.map((e) => (e.id === id ? withTags : e)));
+    setMovements((p) => p.map((m) => (m.id === id ? withTags : m)));
     return { data: withTags, error: null };
   }
 
-  async function deleteIncomeEntry(id) {
+  async function deleteMovement(id) {
     if (!supabase) return { error: 'Not configured' };
     const { error } = await supabase
-      .from('income_entries')
+      .from('movimentacoes')
       .delete()
       .eq('id', id);
-    if (!error) setIncomeEntries((p) => p.filter((e) => e.id !== id));
+    if (!error) setMovements((p) => p.filter((m) => m.id !== id));
     return { error };
   }
 
-  async function addFixedExpense(entry) {
-    if (!supabase) return { error: 'Not configured' };
-    const { tagIds, ...rest } = entry;
-    const { data, error } = await supabase
-      .from('fixed_expenses')
-      .insert({ ...rest, user_id: user.id })
-      .select()
-      .single();
-    if (error) return { data, error };
+  // Marca uma ocorrência específica de uma movimentação recorrente como
+  // exceção — usado por "Atualizar/Excluir somente esta" no QuickAddModal.
+  // Ao contrário das tags (substituídas por completo a cada salvamento),
+  // exceções só acumulam, uma por edição/exclusão pontual.
+  async function addMovementException(movementId, exceptionDate) {
+    if (!supabase || !user) return { error: 'Not configured' };
+    const { error } = await supabase
+      .from('movimentacao_excecoes')
+      .insert({ movimentacao_id: movementId, data_excecao: exceptionDate, usuario_id: user.id });
+    if (error) return { error };
 
-    if (tagIds && tagIds.length > 0) {
-      const { error: tagError } = await setEntryTags('fixed_expense_tags', data.id, tagIds);
-      if (tagError) return { data, error: tagError };
-    }
-
-    const withTags = { ...data, tag_ids: tagIds ?? [] };
-    setFixedExpenses((p) =>
-      [...p, withTags].sort((a, b) => a.start_date.localeCompare(b.start_date))
+    setMovements((p) =>
+      p.map((m) =>
+        m.id === movementId
+          ? { ...m, exception_dates: [...(m.exception_dates || []), exceptionDate] }
+          : m
+      )
     );
-    return { data: withTags, error: null };
+    return { error: null };
   }
 
-  async function updateFixedExpense(id, updates) {
-    if (!supabase) return { error: 'Not configured' };
-    const { tagIds, ...rest } = updates;
-    const { data, error } = await supabase
-      .from('fixed_expenses')
-      .update(rest)
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) return { data, error };
-
-    let finalTagIds = tagIds;
-    if (tagIds !== undefined) {
-      const { error: tagError } = await setEntryTags('fixed_expense_tags', id, tagIds);
-      if (tagError) return { data, error: tagError };
-    } else {
-      finalTagIds = fixedExpenses.find((e) => e.id === id)?.tag_ids ?? [];
-    }
-
-    const withTags = { ...data, tag_ids: finalTagIds };
-    setFixedExpenses((p) => p.map((e) => (e.id === id ? withTags : e)));
-    return { data: withTags, error: null };
-  }
-
-  async function deleteFixedExpense(id) {
-    if (!supabase) return { error: 'Not configured' };
-    const { error } = await supabase
-      .from('fixed_expenses')
-      .delete()
-      .eq('id', id);
-    if (!error) setFixedExpenses((p) => p.filter((e) => e.id !== id));
-    return { error };
-  }
+  // ─── CRUD — Gastos Variáveis / Cartões / Dias Verificados / Tags ──────────
 
   async function addVariableExpense(entry) {
     if (!supabase) return { error: 'Not configured' };
     const { data, error } = await supabase
-      .from('variable_expenses')
-      .insert({ ...entry, user_id: user.id })
+      .from('gastos_variaveis')
+      .insert({ ...entry, usuario_id: user.id })
       .select()
       .single();
     if (!error) setVariableExpenses((p) => [...p, data]);
@@ -523,7 +430,7 @@ export function FinanceProvider({ children }) {
   async function updateVariableExpense(id, updates) {
     if (!supabase) return { error: 'Not configured' };
     const { data, error } = await supabase
-      .from('variable_expenses')
+      .from('gastos_variaveis')
       .update(updates)
       .eq('id', id)
       .select()
@@ -536,7 +443,7 @@ export function FinanceProvider({ children }) {
   async function deleteVariableExpense(id) {
     if (!supabase) return { error: 'Not configured' };
     const { error } = await supabase
-      .from('variable_expenses')
+      .from('gastos_variaveis')
       .delete()
       .eq('id', id);
     if (!error) setVariableExpenses((p) => p.filter((e) => e.id !== id));
@@ -546,8 +453,8 @@ export function FinanceProvider({ children }) {
   async function addCard(entry) {
     if (!supabase) return { error: 'Not configured' };
     const { data, error } = await supabase
-      .from('cards')
-      .insert({ ...entry, user_id: user.id })
+      .from('cartoes')
+      .insert({ ...entry, usuario_id: user.id })
       .select()
       .single();
     if (!error) setCards((p) => [...p, data]);
@@ -557,7 +464,7 @@ export function FinanceProvider({ children }) {
   async function updateCard(id, updates) {
     if (!supabase) return { error: 'Not configured' };
     const { data, error } = await supabase
-      .from('cards')
+      .from('cartoes')
       .update(updates)
       .eq('id', id)
       .select()
@@ -568,234 +475,17 @@ export function FinanceProvider({ children }) {
 
   async function deleteCard(id) {
     if (!supabase) return { error: 'Not configured' };
-    const { error } = await supabase.from('cards').delete().eq('id', id);
+    const { error } = await supabase.from('cartoes').delete().eq('id', id);
     if (!error) setCards((p) => p.filter((e) => e.id !== id));
-    return { error };
-  }
-
-  async function addCardBill(entry) {
-    if (!supabase) return { error: 'Not configured' };
-    const { tagIds, ...rest } = entry;
-    const { data, error } = await supabase
-      .from('credit_card_bills')
-      .insert({ ...rest, user_id: user.id })
-      .select()
-      .single();
-    if (error) return { data, error };
-
-    if (tagIds && tagIds.length > 0) {
-      const { error: tagError } = await setEntryTags('card_bill_tags', data.id, tagIds);
-      if (tagError) return { data, error: tagError };
-    }
-
-    const withTags = { ...data, tag_ids: tagIds ?? [] };
-    setCardBills((p) => [...p, withTags]);
-    return { data: withTags, error: null };
-  }
-
-  async function updateCardBill(id, updates) {
-    if (!supabase) return { error: 'Not configured' };
-    const { tagIds, ...rest } = updates;
-    const { data, error } = await supabase
-      .from('credit_card_bills')
-      .update(rest)
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) return { data, error };
-
-    let finalTagIds = tagIds;
-    if (tagIds !== undefined) {
-      const { error: tagError } = await setEntryTags('card_bill_tags', id, tagIds);
-      if (tagError) return { data, error: tagError };
-    } else {
-      finalTagIds = cardBills.find((e) => e.id === id)?.tag_ids ?? [];
-    }
-
-    const withTags = { ...data, tag_ids: finalTagIds };
-    setCardBills((p) => p.map((e) => (e.id === id ? withTags : e)));
-    return { data: withTags, error: null };
-  }
-
-  async function deleteCardBill(id) {
-    if (!supabase) return { error: 'Not configured' };
-    const { error } = await supabase
-      .from('credit_card_bills')
-      .delete()
-      .eq('id', id);
-    if (!error) setCardBills((p) => p.filter((e) => e.id !== id));
-    return { error };
-  }
-
-  async function addRecurringDailyEntry(entry) {
-    if (!supabase) return { error: 'Not configured' };
-    const { tagIds, ...rest } = entry;
-    const { data, error } = await supabase
-      .from('recurring_daily_entries')
-      .insert({ ...rest, user_id: user.id })
-      .select()
-      .single();
-    if (error) return { data, error };
-
-    if (tagIds && tagIds.length > 0) {
-      const { error: tagError } = await setEntryTags('recurring_daily_entry_tags', data.id, tagIds);
-      if (tagError) return { data, error: tagError };
-    }
-
-    const withTags = { ...data, tag_ids: tagIds ?? [] };
-    setRecurringDailyEntries((p) =>
-      [...p, withTags].sort((a, b) => a.start_date.localeCompare(b.start_date))
-    );
-    return { data: withTags, error: null };
-  }
-
-  async function updateRecurringDailyEntry(id, updates) {
-    if (!supabase) return { error: 'Not configured' };
-    const { tagIds, ...rest } = updates;
-    const { data, error } = await supabase
-      .from('recurring_daily_entries')
-      .update(rest)
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) return { data, error };
-
-    let finalTagIds = tagIds;
-    if (tagIds !== undefined) {
-      const { error: tagError } = await setEntryTags('recurring_daily_entry_tags', id, tagIds);
-      if (tagError) return { data, error: tagError };
-    } else {
-      finalTagIds = recurringDailyEntries.find((e) => e.id === id)?.tag_ids ?? [];
-    }
-
-    const withTags = { ...data, tag_ids: finalTagIds };
-    setRecurringDailyEntries((p) => p.map((e) => (e.id === id ? withTags : e)));
-    return { data: withTags, error: null };
-  }
-
-  async function deleteRecurringDailyEntry(id) {
-    if (!supabase) return { error: 'Not configured' };
-    const { error } = await supabase
-      .from('recurring_daily_entries')
-      .delete()
-      .eq('id', id);
-    if (!error) setRecurringDailyEntries((p) => p.filter((e) => e.id !== id));
-    return { error };
-  }
-
-  // Marca uma ocorrência específica de um template recorrente como exceção
-  // — usado por "Atualizar/Excluir somente esta" no QuickAddModal. Ao
-  // contrário das tags (que são substituídas por completo a cada salvamento),
-  // exceções só acumulam, uma por edição/exclusão pontual.
-  async function addRecurrenceException(entryType, entryId, exceptionDate) {
-    if (!supabase || !user) return { error: 'Not configured' };
-    const table = EXCEPTION_TABLE_BY_TYPE[entryType];
-    if (!table) return { error: `Tipo de recorrência desconhecido: ${entryType}` };
-
-    const { error } = await supabase
-      .from(table)
-      .insert({ entry_id: entryId, exception_date: exceptionDate, user_id: user.id });
-    if (error) return { error };
-
-    const appendException = (setter) =>
-      setter((p) =>
-        p.map((e) =>
-          e.id === entryId
-            ? { ...e, exception_dates: [...(e.exception_dates || []), exceptionDate] }
-            : e
-        )
-      );
-
-    if (entryType === 'income') appendException(setIncomeEntries);
-    else if (entryType === 'expense') appendException(setFixedExpenses);
-    else if (entryType === 'card_bill') appendException(setCardBills);
-    else if (entryType === 'recurring_daily') appendException(setRecurringDailyEntries);
-
-    return { error: null };
-  }
-
-  // Grava o conjunto de tags de uma transação, substituindo o anterior por
-  // completo (delete + insert é mais simples que diff e o volume por
-  // lançamento é sempre pequeno).
-  async function setTransactionTags(transactionId, tagIds = []) {
-    if (!supabase) return { error: 'Not configured' };
-    await supabase
-      .from('transaction_tags')
-      .delete()
-      .eq('transaction_id', transactionId);
-    if (tagIds.length > 0) {
-      const { error } = await supabase.from('transaction_tags').insert(
-        tagIds.map((tagId) => ({
-          transaction_id: transactionId,
-          tag_id: tagId,
-          user_id: user.id,
-        }))
-      );
-      if (error) return { error };
-    }
-    return { error: null };
-  }
-
-  async function addTransaction(entry) {
-    if (!supabase) return { error: 'Not configured' };
-    const { tagIds, ...rest } = entry;
-    const { data, error } = await supabase
-      .from('daily_transactions')
-      .insert({ ...rest, user_id: user.id })
-      .select()
-      .single();
-    if (error) return { data, error };
-
-    if (tagIds && tagIds.length > 0) {
-      const { error: tagError } = await setTransactionTags(data.id, tagIds);
-      if (tagError) return { data, error: tagError };
-    }
-
-    const withTags = { ...data, tag_ids: tagIds ?? [] };
-    setTransactions((p) => [...p, withTags]);
-    return { data: withTags, error: null };
-  }
-
-  async function updateTransaction(id, updates) {
-    if (!supabase) return { error: 'Not configured' };
-    const { tagIds, ...rest } = updates;
-    const { data, error } = await supabase
-      .from('daily_transactions')
-      .update(rest)
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) return { data, error };
-
-    let finalTagIds = tagIds;
-    if (tagIds !== undefined) {
-      const { error: tagError } = await setTransactionTags(id, tagIds);
-      if (tagError) return { data, error: tagError };
-    } else {
-      finalTagIds = transactions.find((t) => t.id === id)?.tag_ids ?? [];
-    }
-
-    const withTags = { ...data, tag_ids: finalTagIds };
-    setTransactions((p) => p.map((e) => (e.id === id ? withTags : e)));
-    return { data: withTags, error: null };
-  }
-
-  async function deleteTransaction(id) {
-    if (!supabase) return { error: 'Not configured' };
-    const { error } = await supabase
-      .from('daily_transactions')
-      .delete()
-      .eq('id', id);
-    if (!error) setTransactions((p) => p.filter((e) => e.id !== id));
     return { error };
   }
 
   async function toggleVerifiedDay(dateStr) {
     if (!supabase) return { error: 'Not configured' };
-    const existing = verifiedDays.find((d) => d.date === dateStr);
+    const existing = verifiedDays.find((d) => d.data === dateStr);
     if (existing) {
       const { error } = await supabase
-        .from('verified_days')
+        .from('dias_verificados')
         .delete()
         .eq('id', existing.id);
       if (!error)
@@ -803,8 +493,8 @@ export function FinanceProvider({ children }) {
       return { error, newState: false };
     } else {
       const { data, error } = await supabase
-        .from('verified_days')
-        .insert({ date: dateStr, user_id: user.id })
+        .from('dias_verificados')
+        .insert({ data: dateStr, usuario_id: user.id })
         .select()
         .single();
       if (!error) setVerifiedDays((p) => [...p, data]);
@@ -815,18 +505,18 @@ export function FinanceProvider({ children }) {
   async function addTag(name, color) {
     if (!supabase) return { error: 'Not configured' };
     const { data, error } = await supabase
-      .from('tags')
-      .insert({ name, color, user_id: user.id })
+      .from('etiquetas')
+      .insert({ nome: name, cor: color, usuario_id: user.id })
       .select()
       .single();
-    if (!error) setTags((p) => [...p, data].sort((a, b) => a.name.localeCompare(b.name)));
+    if (!error) setTags((p) => [...p, data].sort((a, b) => a.nome.localeCompare(b.nome)));
     return { data, error };
   }
 
   async function updateTag(id, updates) {
     if (!supabase) return { error: 'Not configured' };
     const { data, error } = await supabase
-      .from('tags')
+      .from('etiquetas')
       .update(updates)
       .eq('id', id)
       .select()
@@ -837,24 +527,16 @@ export function FinanceProvider({ children }) {
 
   async function deleteTag(id) {
     if (!supabase) return { error: 'Not configured' };
-    const { error } = await supabase.from('tags').delete().eq('id', id);
+    const { error } = await supabase.from('etiquetas').delete().eq('id', id);
     if (!error) {
-      const stripTag = (setter) =>
-        setter((p) =>
-          p.map((e) =>
-            e.tag_ids?.includes(id)
-              ? { ...e, tag_ids: e.tag_ids.filter((tid) => tid !== id) }
-              : e
-          )
-        );
       setTags((p) => p.filter((t) => t.id !== id));
-      // Cascade real no banco (FK income_entry_tags.tag_id etc.) já cuida
-      // do lado servidor — isso só mantém o cache local em dia.
-      stripTag(setTransactions);
-      stripTag(setIncomeEntries);
-      stripTag(setFixedExpenses);
-      stripTag(setCardBills);
-      stripTag(setRecurringDailyEntries);
+      // Cascade real no banco (FK movimentacao_etiquetas.etiqueta_id) já
+      // cuida do lado servidor — isso só mantém o cache local em dia.
+      setMovements((p) =>
+        p.map((m) =>
+          m.tag_ids?.includes(id) ? { ...m, tag_ids: m.tag_ids.filter((tid) => tid !== id) } : m
+        )
+      );
     }
     return { error };
   }
@@ -865,43 +547,35 @@ export function FinanceProvider({ children }) {
     (year, month) => {
       if (!profile) return { forecast: [], summary: {} };
       const startYear = new Date().getFullYear();
-      // Passa todas as transações — generateMonthForecast filtra por data
-      // exata internamente. Pré-filtrar por mês de calendário aqui quebrava
-      // dias que caem em outro "balde" quando cycle_start_day != 1.
+      // Passa todas as movimentações — generateMonthForecast filtra por
+      // recorrência internamente. Pré-filtrar por mês de calendário aqui
+      // quebraria dias que caem em outro "balde" quando dia_inicio_ciclo != 1.
       const balance = getBalanceAtMonthStart({
         year,
         month,
         referenceYear: startYear,
-        initialBalance: profile.initial_balance,
-        incomeEntries,
-        fixedExpenses,
+        initialBalance: profile.saldo_inicial,
+        movements,
         variableExpenses,
         cards,
-        cardBills,
-        recurringDailyEntries,
         verifiedDays,
-        transactions,
-        showDailyForecast: profile.show_daily_forecast !== false,
-        cycleStartDay: profile.cycle_start_day ?? 1,
+        showDailyForecast: profile.mostrar_previsao_diaria !== false,
+        cycleStartDay: profile.dia_inicio_ciclo ?? 1,
       });
       const forecast = generateMonthForecast({
         year,
         month,
         initialBalance: balance,
-        incomeEntries,
-        fixedExpenses,
+        movements,
         variableExpenses,
         cards,
-        cardBills,
-        recurringDailyEntries,
         verifiedDays,
-        transactions,
-        showDailyForecast: profile.show_daily_forecast !== false,
-        cycleStartDay: profile.cycle_start_day ?? 1,
+        showDailyForecast: profile.mostrar_previsao_diaria !== false,
+        cycleStartDay: profile.dia_inicio_ciclo ?? 1,
       });
       return { forecast, summary: calculateMonthlySummary(forecast), initialBalance: balance };
     },
-    [profile, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, recurringDailyEntries, verifiedDays, transactions]
+    [profile, movements, variableExpenses, cards, verifiedDays]
   );
 
   const getMultiMonthForecastFn = useCallback(
@@ -912,17 +586,13 @@ export function FinanceProvider({ children }) {
         year: startYear,
         month: startMonth,
         referenceYear: startOfHistoryYear,
-        initialBalance: profile.initial_balance,
-        incomeEntries,
-        fixedExpenses,
+        initialBalance: profile.saldo_inicial,
+        movements,
         variableExpenses,
         cards,
-        cardBills,
-        recurringDailyEntries,
         verifiedDays,
-        transactions,
-        showDailyForecast: profile.show_daily_forecast !== false,
-        cycleStartDay: profile.cycle_start_day ?? 1,
+        showDailyForecast: profile.mostrar_previsao_diaria !== false,
+        cycleStartDay: profile.dia_inicio_ciclo ?? 1,
       });
       return Array.from({ length: numMonths }, (_, i) => {
         const m = (startMonth + i) % 12;
@@ -931,16 +601,12 @@ export function FinanceProvider({ children }) {
           year: y,
           month: m,
           initialBalance: currentBalance,
-          incomeEntries,
-          fixedExpenses,
+          movements,
           variableExpenses,
           cards,
-          cardBills,
-          recurringDailyEntries,
           verifiedDays,
-          transactions,
-          showDailyForecast: profile.show_daily_forecast !== false,
-          cycleStartDay: profile.cycle_start_day ?? 1,
+          showDailyForecast: profile.mostrar_previsao_diaria !== false,
+          cycleStartDay: profile.dia_inicio_ciclo ?? 1,
         });
         const result = {
           year: y,
@@ -953,7 +619,7 @@ export function FinanceProvider({ children }) {
         return result;
       });
     },
-    [profile, incomeEntries, fixedExpenses, variableExpenses, cards, cardBills, recurringDailyEntries, verifiedDays, transactions]
+    [profile, movements, variableExpenses, cards, verifiedDays]
   );
 
   // ─── Navigation ───────────────────────────────────────────────────────────
@@ -976,9 +642,9 @@ export function FinanceProvider({ children }) {
   async function refetchVariableExpenses() {
     if (!supabase) return;
     const { data } = await supabase
-      .from('variable_expenses')
+      .from('gastos_variaveis')
       .select('*')
-      .eq('user_id', user.id);
+      .eq('usuario_id', user.id);
     if (data) setVariableExpenses(data);
   }
 
@@ -993,11 +659,11 @@ export function FinanceProvider({ children }) {
     async (periodStart, periodEnd) => {
       if (!supabase || !user) return { data: null, error: null };
       const { data, error } = await supabase
-        .from('period_goals')
+        .from('metas_periodo')
         .select('*')
-        .eq('user_id', user.id)
-        .eq('period_start', periodStart)
-        .eq('period_end', periodEnd)
+        .eq('usuario_id', user.id)
+        .eq('periodo_inicio', periodStart)
+        .eq('periodo_fim', periodEnd)
         .maybeSingle();
       return { data, error };
     },
@@ -1007,17 +673,17 @@ export function FinanceProvider({ children }) {
   async function upsertPeriodGoal({ periodStart, periodEnd, metaGasto, metaEconomia }) {
     if (!supabase || !user) return { error: 'Not configured' };
     const { data, error } = await supabase
-      .from('period_goals')
+      .from('metas_periodo')
       .upsert(
         {
-          user_id: user.id,
-          period_start: periodStart,
-          period_end: periodEnd,
+          usuario_id: user.id,
+          periodo_inicio: periodStart,
+          periodo_fim: periodEnd,
           meta_gasto: metaGasto,
           meta_economia: metaEconomia,
-          updated_at: new Date().toISOString(),
+          atualizado_em: new Date().toISOString(),
         },
-        { onConflict: 'user_id,period_start,period_end' }
+        { onConflict: 'usuario_id,periodo_inicio,periodo_fim' }
       )
       .select()
       .single();
@@ -1025,28 +691,24 @@ export function FinanceProvider({ children }) {
   }
 
   // Apaga todos os dados financeiros do usuário (mantém o login/conta).
-  // Usado pela opção "Zerar minha conta" no Menu — o reset de
-  // initial_balance/cycle_start_day fica a cargo de quem chama (precisa do
+  // Usado pela opção "Zerar minha conta" em Config → Geral — o reset de
+  // saldo_inicial/dia_inicio_ciclo fica a cargo de quem chama (precisa do
   // updateProfile do AuthContext, que este contexto não tem acesso).
   async function resetAccount() {
     if (!supabase || !user) return { error: 'Not configured' };
 
     const tables = [
-      'income_entries',
-      'fixed_expenses',
-      'variable_expenses',
-      'cards',
-      'credit_card_bills',
-      'daily_transactions',
-      'verified_days',
-      'tags',
-      'assistant_messages',
-      'recurring_daily_entries',
-      'period_goals',
+      'movimentacoes',
+      'gastos_variaveis',
+      'cartoes',
+      'dias_verificados',
+      'etiquetas',
+      'mensagens_assistente',
+      'metas_periodo',
     ];
 
     const results = await Promise.allSettled(
-      tables.map((t) => supabase.from(t).delete().eq('user_id', user.id))
+      tables.map((t) => supabase.from(t).delete().eq('usuario_id', user.id))
     );
     const failed = results.find(
       (r) => r.status === 'rejected' || r.value?.error
@@ -1063,38 +725,22 @@ export function FinanceProvider({ children }) {
   // ─── Context value ────────────────────────────────────────────────────────
 
   const value = {
-    incomeEntries,
-    fixedExpenses,
+    movements,
     variableExpenses,
     cards,
-    cardBills,
-    transactions,
     verifiedDays,
     tags,
-    recurringDailyEntries,
     loading,
-    addIncomeEntry,
-    updateIncomeEntry,
-    deleteIncomeEntry,
-    addFixedExpense,
-    updateFixedExpense,
-    deleteFixedExpense,
+    addMovement,
+    updateMovement,
+    deleteMovement,
+    addMovementException,
     addVariableExpense,
     updateVariableExpense,
     deleteVariableExpense,
     addCard,
     updateCard,
     deleteCard,
-    addCardBill,
-    updateCardBill,
-    deleteCardBill,
-    addRecurringDailyEntry,
-    updateRecurringDailyEntry,
-    deleteRecurringDailyEntry,
-    addRecurrenceException,
-    addTransaction,
-    updateTransaction,
-    deleteTransaction,
     toggleVerifiedDay,
     addTag,
     updateTag,
@@ -1139,4 +785,3 @@ export function useFinance() {
     throw new Error('useFinance must be used within a FinanceProvider');
   return context;
 }
-

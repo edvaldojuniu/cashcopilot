@@ -1,5 +1,13 @@
 /**
  * Cash Copilot — Motor de Cálculo Financeiro (V2 Pro)
+ *
+ * Lê a tabela unificada `movimentacoes` (colunas em português: tipo, valor,
+ * descricao, frequencia, data_inicio, data_fim, cartao_id, ativo) e devolve
+ * objetos por dia com nomes de campo em inglês (description, amount, type,
+ * date, balance, totalIncome, ...) — esta é a ÚNICA fronteira de tradução do
+ * app; todo o resto da árvore de componentes (DayRow, DayDetailsModal,
+ * page.js, totais/page.js, analysisInsights.js) consome o formato de saída
+ * em inglês sem saber que o banco está em português.
  */
 
 import { getCycleBounds } from './utils';
@@ -28,26 +36,27 @@ function monthsBetweenDates(a, b) {
 }
 
 /**
- * Decide se um template recorrente (entrada, saída fixa, fatura de cartão
- * ou diário/economia recorrente) tem uma ocorrência no dia `currentLoopDate`.
- * Único lugar com essa matemática — qualquer casamento de recorrência no
- * app precisa passar por aqui, não reimplementar à parte (ver
+ * Decide se uma movimentação (entrada, saída fixa, cartão ou diário/economia
+ * — recorrente OU avulsa) tem uma ocorrência no dia `currentLoopDate`. Único
+ * lugar com essa matemática — qualquer casamento de recorrência no app
+ * precisa passar por aqui, não reimplementar à parte (ver
  * known_bugs_lessons: já tivemos bug de lógica de data duplicada divergindo).
  *
- * `frequency`:
- *  - 'none'      → casa só no dia exato (start_date === end_date === hoje)
- *  - 'daily'     → qualquer dia dentro do intervalo [start_date, end_date]
+ * `frequencia`:
+ *  - 'none'      → casa só no dia exato (data_inicio === data_fim === hoje) —
+ *                   é assim que um lançamento avulso é representado
+ *  - 'daily'     → qualquer dia dentro do intervalo [data_inicio, data_fim]
  *  - 'weekly'    → mesmo dia da semana do início, dentro do intervalo
  *  - 'monthly' | 'installment' → mesmo dia do mês do início, dentro do intervalo
  */
 export function matchesRecurrence(entry, currentLoopDate) {
-  if (entry.is_active === false || !entry.start_date) return false;
+  if (entry.ativo === false || !entry.data_inicio) return false;
 
-  const start = toLocalMidnight(entry.start_date);
+  const start = toLocalMidnight(entry.data_inicio);
   if (currentLoopDate < start) return false;
 
-  if (entry.end_date) {
-    const end = toLocalMidnight(entry.end_date);
+  if (entry.data_fim) {
+    const end = toLocalMidnight(entry.data_fim);
     if (currentLoopDate > end) return false;
   }
 
@@ -58,7 +67,7 @@ export function matchesRecurrence(entry, currentLoopDate) {
     if (entry.exception_dates.includes(dateStr)) return false;
   }
 
-  const freq = entry.frequency || 'none';
+  const freq = entry.frequencia || 'none';
   if (freq === 'none') return currentLoopDate.getTime() === start.getTime();
   if (freq === 'daily') return true;
   if (freq === 'weekly') {
@@ -74,21 +83,15 @@ export function matchesRecurrence(entry, currentLoopDate) {
  */
 export function calcDailyAmount(variableExpenses, daysInCycle) {
   const total = variableExpenses
-    .filter((e) => e.is_active !== false)
-    .reduce((sum, e) => sum + Number(e.monthly_amount || 0), 0);
+    .filter((e) => e.ativo !== false)
+    .reduce((sum, e) => sum + Number(e.valor_mensal || 0), 0);
   return daysInCycle > 0 ? (total / daysInCycle) : 0;
 }
 
-function getIncomeForDay(currentLoopDate, incomeEntries, dateStr) {
-  return incomeEntries
-    .filter((e) => matchesRecurrence(e, currentLoopDate))
-    .map((e) => ({
-      ...e,
-      description: e.description,
-      amount: Number(e.amount),
-      type: 'income',
-      date: dateStr, // qual ocorrência exata é essa — precisa pra editar/excluir só esta
-    }));
+// Traduz uma linha de `movimentacoes` (campos em português) pra um item de
+// ocorrência no formato em inglês que o resto do app espera.
+function toOccurrence(m, type, dateStr) {
+  return { ...m, description: m.descricao, amount: Number(m.valor), type, date: dateStr };
 }
 
 /**
@@ -98,13 +101,9 @@ export function generateMonthForecast({
   year,
   month,
   initialBalance,
-  incomeEntries = [],
-  fixedExpenses = [],
+  movements = [],
   variableExpenses = [],
-  transactions = [],
   cards = [],
-  cardBills = [],
-  recurringDailyEntries = [],
   verifiedDays = [],
   showDailyForecast = true,
   cycleStartDay = 1,
@@ -133,83 +132,86 @@ export function generateMonthForecast({
     const isPast = currentLoopDate < todayNormalized;
     const isToday = currentLoopDate.getTime() === todayNormalized.getTime();
     const isFuture = currentLoopDate > todayNormalized;
-    const isVerified = verifiedDays.some(d => d.date === dateStr);
+    const isVerified = verifiedDays.some(d => d.data === dateStr);
 
     // Entradas do Dia
-    const incomes = getIncomeForDay(currentLoopDate, incomeEntries, dateStr);
+    const incomes = movements
+      .filter(m => m.tipo === 'income' && matchesRecurrence(m, currentLoopDate))
+      .map(m => toOccurrence(m, 'income', dateStr));
     const totalIncome = incomes.reduce((sum, i) => sum + i.amount, 0);
 
     // Saídas Fixas do Dia
-    const expensesFixed = fixedExpenses
-      .filter(e => matchesRecurrence(e, currentLoopDate))
-      .map(e => ({ ...e, type: 'expense', amount: Number(e.amount), date: dateStr }));
+    const expensesFixed = movements
+      .filter(m => m.tipo === 'expense' && matchesRecurrence(m, currentLoopDate))
+      .map(m => toOccurrence(m, 'expense', dateStr));
 
     // Faturas de Cartão (Dinâmico)
     const expensesCards = [];
     cards.forEach(c => {
       // Se a fatura desse cartão fecha neste exato dia...
-      if (c.closing_day === day) {
+      if (c.dia_fechamento === day) {
         // Entra nesta fatura tudo desde o fechamento anterior (inclusive)
         // até o dia anterior a este fechamento (inclusive) — ou seja, o
         // próprio dia de fechamento já abre a fatura seguinte.
-        const closeCurrent = new Date(currYear, currMonth, c.closing_day);
-        const closePrev = new Date(currYear, currMonth - 1, c.closing_day);
+        const closeCurrent = new Date(currYear, currMonth, c.dia_fechamento);
+        const closePrev = new Date(currYear, currMonth - 1, c.dia_fechamento);
 
-        const singleTransactions = transactions.filter(t => {
-          if (t.type !== 'card' || t.card_id !== c.id) return false;
-          const tDate = new Date(`${t.date}T12:00:00`); // Fix time
-          return tDate >= closePrev && tDate < closeCurrent;
+        const singleTransactions = movements.filter(m => {
+          if (m.tipo !== 'card' || m.frequencia !== 'none' || m.cartao_id !== c.id) return false;
+          const mDate = new Date(`${m.data_inicio}T12:00:00`); // Fix time
+          return mDate >= closePrev && mDate < closeCurrent;
         });
 
         // 2) Procurar parcelamentos e assinaturas ativas para ESTE cartão que fecham neste dia
-        // (Cartão só admite frequency 'none'/'monthly'/'installment' — nunca
+        // (Cartão só admite frequencia 'none'/'monthly'/'installment' — nunca
         // semanal/diário — então cada template casa no máximo uma vez por mês.)
         const installmentsForThisCard = [];
-        if (cardBills && cardBills.length > 0) {
-          cardBills.forEach(cb => {
-            if (cb.card_id !== c.id) return;
-            if (!matchesRecurrence(cb, currentLoopDate)) return;
+        movements.forEach(cb => {
+          if (cb.tipo !== 'card' || cb.frequencia === 'none' || cb.cartao_id !== c.id) return;
+          if (!matchesRecurrence(cb, currentLoopDate)) return;
 
-            let description = cb.description || `Parcelamento/Assinatura`;
-            // Só numera parcelamento de verdade (tem fim). Assinatura sem
-            // fim (end_date null) não ganha "(n/total)".
-            if (cb.frequency === 'installment' && cb.end_date) {
-              const start = toLocalMidnight(cb.start_date);
-              const end = toLocalMidnight(cb.end_date);
-              const totalInstallments = monthsBetweenDates(start, end) + 1;
-              const currentInstallment = monthsBetweenDates(start, currentLoopDate) + 1;
-              description = `${description} (${currentInstallment}/${totalInstallments})`;
-            }
+          let description = cb.descricao || `Parcelamento/Assinatura`;
+          // Só numera parcelamento de verdade (tem fim). Assinatura sem
+          // fim (data_fim null) não ganha "(n/total)".
+          if (cb.frequencia === 'installment' && cb.data_fim) {
+            const start = toLocalMidnight(cb.data_inicio);
+            const end = toLocalMidnight(cb.data_fim);
+            const totalInstallments = monthsBetweenDates(start, end) + 1;
+            const currentInstallment = monthsBetweenDates(start, currentLoopDate) + 1;
+            description = `${description} (${currentInstallment}/${totalInstallments})`;
+          }
 
-            installmentsForThisCard.push({
-              ...cb,
-              description,
-              amount: Number(cb.amount),
-              type: 'card_installment',
-              date: dateStr // Para exibição no modal
-            });
+          installmentsForThisCard.push({
+            ...cb,
+            description,
+            amount: Number(cb.valor),
+            type: 'card_installment',
+            date: dateStr // Para exibição no modal
           });
-        }
+        });
 
-        const invoiceTransactions = [...singleTransactions, ...installmentsForThisCard];
+        const invoiceTransactions = [
+          ...singleTransactions.map(m => toOccurrence(m, 'card', dateStr)),
+          ...installmentsForThisCard,
+        ];
 
         // Procurar pagamentos antecipados que referenciam ESTE ciclo
-        const earlyPaymentsForThisInvoice = transactions.filter(t => {
-          if (t.type !== 'invoice_payment' || t.card_id !== c.id) return false;
-          const tDate = new Date(`${t.date}T12:00:00`);
+        const earlyPaymentsForThisInvoice = movements.filter(m => {
+          if (m.tipo !== 'invoice_payment' || m.cartao_id !== c.id) return false;
+          const mDate = new Date(`${m.data_inicio}T12:00:00`);
           // Pagamentos feitos dentro da mesma janela desta fatura abatem ela
-          return tDate >= closePrev && tDate < closeCurrent;
+          return mDate >= closePrev && mDate < closeCurrent;
         });
 
         const cardTotal = invoiceTransactions.reduce((sum, t) => sum + Number(t.amount), 0);
-        const alreadyPaid = earlyPaymentsForThisInvoice.reduce((sum, t) => sum + Number(t.amount), 0);
+        const alreadyPaid = earlyPaymentsForThisInvoice.reduce((sum, t) => sum + Number(t.valor), 0);
         const remainingToPay = cardTotal - alreadyPaid;
 
         if (cardTotal > 0) { // Mostrar a fatura mesmo se estiver paga, apenas alterando o amount final e details
           expensesCards.push({
             id: `card-bill-${c.id}-${dateStr}`,
             card_id: c.id,
-            description: `Fatura ${c.name}`,
+            description: `Fatura ${c.nome}`,
             amount: remainingToPay > 0 ? remainingToPay : 0,
             originalTotal: cardTotal,
             alreadyPaid: alreadyPaid,
@@ -225,30 +227,36 @@ export function generateMonthForecast({
     const totalFixed = expensesFixed.reduce((sum, e) => sum + e.amount, 0);
     const totalCard = expensesCards.reduce((sum, e) => sum + e.amount, 0);
 
-    // Gastos reais (Pingos Diários e Avulsos deste dia)
-    const dayTransactions = transactions.filter(t => t.date === dateStr);
-    const dailyTxnsReal = dayTransactions.filter(t => t.type === 'daily');
+    // Gastos reais avulsos (Pingos Diários deste dia) — frequencia 'none' já
+    // casa só na data exata via matchesRecurrence, então cobre avulso puro.
+    const dailyTxnsReal = movements
+      .filter(m => m.tipo === 'daily' && m.frequencia === 'none' && matchesRecurrence(m, currentLoopDate))
+      .map(m => toOccurrence(m, 'daily', dateStr));
     const totalRealDaily = dailyTxnsReal.reduce((sum, t) => sum + Number(t.amount), 0);
 
     // Gastos reais avulsos no cartão (Pingo Diário do Cartão)
-    const cardTxnsReal = dayTransactions.filter(t => t.type === 'card');
+    const cardTxnsReal = movements
+      .filter(m => m.tipo === 'card' && m.frequencia === 'none' && matchesRecurrence(m, currentLoopDate))
+      .map(m => toOccurrence(m, 'card', dateStr));
     const totalRealCardDaily = cardTxnsReal.reduce((sum, t) => sum + Number(t.amount), 0);
 
-    // Economias (Retiradas para investimento)
-    const savingTxns = dayTransactions.filter(t => t.type === 'saving');
+    // Economias (Retiradas para investimento) avulsas
+    const savingTxns = movements
+      .filter(m => m.tipo === 'saving' && m.frequencia === 'none' && matchesRecurrence(m, currentLoopDate))
+      .map(m => toOccurrence(m, 'saving', dateStr));
     const totalSavings = savingTxns.reduce((sum, t) => sum + Number(t.amount), 0);
 
     // Diário/Economia recorrentes (templates) — tratados como certos, igual
     // saída fixa: somam sempre, independente de passado/futuro. Não entram
     // na troca previsão-vs-real do orçamento variável abaixo.
-    const recurringDaily = recurringDailyEntries
-      .filter(e => e.kind === 'daily' && matchesRecurrence(e, currentLoopDate))
-      .map(e => ({ ...e, type: 'recurring_daily', amount: Number(e.amount), date: dateStr }));
+    const recurringDaily = movements
+      .filter(m => m.tipo === 'daily' && m.frequencia !== 'none' && matchesRecurrence(m, currentLoopDate))
+      .map(m => toOccurrence(m, 'recurring_daily', dateStr));
     const totalRecurringDaily = recurringDaily.reduce((sum, e) => sum + e.amount, 0);
 
-    const recurringSavings = recurringDailyEntries
-      .filter(e => e.kind === 'saving' && matchesRecurrence(e, currentLoopDate))
-      .map(e => ({ ...e, type: 'recurring_saving', amount: Number(e.amount), date: dateStr }));
+    const recurringSavings = movements
+      .filter(m => m.tipo === 'saving' && m.frequencia !== 'none' && matchesRecurrence(m, currentLoopDate))
+      .map(m => toOccurrence(m, 'recurring_saving', dateStr));
     const totalRecurringSaving = recurringSavings.reduce((sum, e) => sum + e.amount, 0);
 
     const totalSavingsAll = totalSavings + totalRecurringSaving;
@@ -265,6 +273,11 @@ export function generateMonthForecast({
     dailyValue += totalRecurringDaily;
 
     balance = balance + totalIncome - totalExpense - dailyValue - totalSavingsAll;
+
+    // União dos avulsos deste dia exato (usada por DayDetailsModal, que
+    // re-filtra por .type internamente) — equivalente ao antigo
+    // `transactions.filter(t => t.date === dateStr)`.
+    const dayTransactions = [...dailyTxnsReal, ...cardTxnsReal, ...savingTxns];
 
     days.push({
       day,
@@ -356,8 +369,8 @@ export function calculateMonthlySummary(forecast) {
  * agrupados por tag. Um lançamento com múltiplas tags conta o valor cheio em
  * cada uma (sem rateio) — é o comportamento esperado para "quanto gastei em
  * cada categoria", não uma partição contábil. Apenas logs vindos de
- * daily_transactions carregam tag_ids; entradas/saídas fixas e faturas
- * agregadas não têm tag e são ignoradas automaticamente.
+ * movimentações avulsas/recorrentes de diário/economia/cartão carregam
+ * tag_ids; entradas/saídas fixas e faturas agregadas também podem ter tag.
  */
 export function calculateTagTotals(logs, tags) {
   const totalsByTagId = {};
@@ -378,24 +391,20 @@ export function calculateTagTotals(logs, tags) {
 
 /**
  * Simula mês a mês, a partir de `referenceYear`/janeiro, até o mês/ano alvo,
- * e devolve o saldo acumulado no início desse mês. `initial_balance` no
- * profile representa o saldo em janeiro de `referenceYear` — todo saldo de
- * qualquer mês futuro é derivado simulando para frente a partir dali (não há
- * snapshot histórico armazenado). Único lugar com essa lógica; usado tanto
- * pelo FinanceContext quanto pelas tools do assistente para não divergir.
+ * e devolve o saldo acumulado no início desse mês. `saldo_inicial` no perfil
+ * representa o saldo em janeiro de `referenceYear` — todo saldo de qualquer
+ * mês futuro é derivado simulando para frente a partir dali (não há snapshot
+ * histórico armazenado). Único lugar com essa lógica; usado tanto pelo
+ * FinanceContext quanto pelas tools do assistente para não divergir.
  */
 export function getBalanceAtMonthStart({
   year,
   month,
   referenceYear,
   initialBalance,
-  incomeEntries = [],
-  fixedExpenses = [],
+  movements = [],
   variableExpenses = [],
-  transactions = [],
   cards = [],
-  cardBills = [],
-  recurringDailyEntries = [],
   verifiedDays = [],
   showDailyForecast = true,
   cycleStartDay = 1,
@@ -409,14 +418,10 @@ export function getBalanceAtMonthStart({
       year: y,
       month: m,
       initialBalance: balance,
-      incomeEntries,
-      fixedExpenses,
+      movements,
       variableExpenses,
       cards,
-      cardBills,
-      recurringDailyEntries,
       verifiedDays,
-      transactions,
       showDailyForecast,
       cycleStartDay,
     });

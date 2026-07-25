@@ -5,10 +5,11 @@ import styles from './InvoiceDetailsModal.module.css';
 import { formatCurrency } from '@/lib/utils';
 import { useFinance } from '@/contexts/FinanceContext';
 import { useBackButtonClose } from '@/hooks/useBackButtonClose';
+import { buildRecurrencePayload } from '@/lib/recurrence';
 
 export default function InvoiceDetailsModal({ isOpen, onClose, invoice }) {
   const [payDate, setPayDate] = useState('');
-  const { addTransaction } = useFinance();
+  const { addMovement } = useFinance();
   const [saving, setSaving] = useState(false);
 
   useBackButtonClose(isOpen, onClose);
@@ -31,12 +32,13 @@ export default function InvoiceDetailsModal({ isOpen, onClose, invoice }) {
     }
 
     setSaving(true);
-    const { error } = await addTransaction({
-      description: `Pagamento ${description}`,
-      amount: amount, 
-      date: payDate,
-      type: 'invoice_payment',
-      card_id: card_id
+    const { error } = await addMovement({
+      tipo: 'invoice_payment',
+      descricao: `Pagamento ${description}`,
+      valor: amount,
+      cartao_id: card_id,
+      ativo: true,
+      ...buildRecurrencePayload({ frequency: 'none', date: payDate }),
     });
     
     setSaving(false);

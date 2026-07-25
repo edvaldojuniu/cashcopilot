@@ -25,7 +25,7 @@ export default function GoalsModal({ isOpen, onClose, periodStart, periodEnd, cu
     if (isOpen) {
       setMetaGasto(currentGoal?.meta_gasto != null ? String(currentGoal.meta_gasto) : '');
       setMetaEconomia(currentGoal?.meta_economia != null ? String(currentGoal.meta_economia) : '');
-      setIncomeTagId(profile?.income_tag_id || '');
+      setIncomeTagId(profile?.etiqueta_renda_id || '');
     }
   }
 
@@ -39,8 +39,8 @@ export default function GoalsModal({ isOpen, onClose, periodStart, periodEnd, cu
   async function handleSave() {
     setIsSaving(true);
     try {
-      if (incomeTagId !== (profile?.income_tag_id || '')) {
-        await updateProfile({ income_tag_id: incomeTagId || null });
+      if (incomeTagId !== (profile?.etiqueta_renda_id || '')) {
+        await updateProfile({ etiqueta_renda_id: incomeTagId || null });
       }
 
       const { error } = await upsertPeriodGoal({
@@ -111,7 +111,7 @@ export default function GoalsModal({ isOpen, onClose, periodStart, periodEnd, cu
           <select value={incomeTagId} onChange={(e) => setIncomeTagId(e.target.value)}>
             <option value="">Nenhuma</option>
             {tags.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
+              <option key={t.id} value={t.id}>{t.nome}</option>
             ))}
           </select>
           <span className={styles.hint}>

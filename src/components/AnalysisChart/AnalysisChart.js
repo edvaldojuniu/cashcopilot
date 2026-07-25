@@ -18,8 +18,8 @@ export default function AnalysisChart({ tagTotals }) {
       {tagTotals.map((tag) => (
         <div key={tag.id} className={styles.row}>
           <div className={styles.rowHeader}>
-            <span className={styles.dot} style={{ background: tag.color }} />
-            <span className={styles.name}>{tag.name}</span>
+            <span className={styles.dot} style={{ background: tag.cor }} />
+            <span className={styles.name}>{tag.nome}</span>
             <span className={styles.value}>{formatCurrency(tag.total)}</span>
           </div>
           <div className={styles.track}>
@@ -27,7 +27,7 @@ export default function AnalysisChart({ tagTotals }) {
               className={styles.bar}
               style={{
                 width: `${max > 0 ? (tag.total / max) * 100 : 0}%`,
-                background: tag.color,
+                background: tag.cor,
               }}
             />
           </div>

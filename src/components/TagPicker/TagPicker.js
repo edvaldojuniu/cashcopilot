@@ -51,12 +51,12 @@ export default function TagPicker({ selectedIds = [], onChange }) {
               onClick={() => toggle(tag.id)}
               style={
                 active
-                  ? { background: `${tag.color}25`, borderColor: tag.color, color: tag.color }
+                  ? { background: `${tag.cor}25`, borderColor: tag.cor, color: tag.cor }
                   : undefined
               }
             >
-              <span className={styles.dot} style={{ background: tag.color }} />
-              {tag.name}
+              <span className={styles.dot} style={{ background: tag.cor }} />
+              {tag.nome}
             </button>
           );
         })}

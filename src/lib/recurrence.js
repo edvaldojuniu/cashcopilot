@@ -47,22 +47,22 @@ export function diffMonths(fromStr, toStr) {
 }
 
 /**
- * Monta { frequency, start_date, end_date } a partir das escolhas do
- * usuário no QuickAddModal. `count` só importa quando endMode === 'count'
- * ou frequency === 'installment'.
+ * Monta { frequencia, data_inicio, data_fim } (nomes de coluna de
+ * `movimentacoes`) a partir das escolhas do usuário no QuickAddModal.
+ * `count` só importa quando endMode === 'count' ou frequency === 'installment'.
  */
 export function buildRecurrencePayload({ frequency, endMode, count, date }) {
   if (frequency === 'none') {
-    return { frequency: 'none', start_date: date, end_date: date };
+    return { frequencia: 'none', data_inicio: date, data_fim: date };
   }
 
   if (frequency === 'installment') {
-    return { frequency: 'installment', start_date: date, end_date: addMonths(date, count - 1) };
+    return { frequencia: 'installment', data_inicio: date, data_fim: addMonths(date, count - 1) };
   }
 
   // monthly | weekly | daily
   if (endMode === 'infinite') {
-    return { frequency, start_date: date, end_date: null };
+    return { frequencia: frequency, data_inicio: date, data_fim: null };
   }
 
   let endDate;
@@ -70,5 +70,5 @@ export function buildRecurrencePayload({ frequency, endMode, count, date }) {
   else if (frequency === 'weekly') endDate = addDays(date, (count - 1) * 7);
   else endDate = addDays(date, count - 1); // daily
 
-  return { frequency, start_date: date, end_date: endDate };
+  return { frequencia: frequency, data_inicio: date, data_fim: endDate };
 }

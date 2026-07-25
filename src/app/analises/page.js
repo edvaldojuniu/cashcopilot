@@ -61,7 +61,7 @@ export default function AnalisesPage() {
   const [goal, setGoal] = useState(null);
   const [goalVersion, setGoalVersion] = useState(0);
 
-  const cycleStartDay = profile?.cycle_start_day ?? 1;
+  const cycleStartDay = profile?.dia_inicio_ciclo ?? 1;
   const periodLabel = formatCyclePeriodLabel(viewYear, viewMonth, cycleStartDay);
 
   const { startDate: periodStart, endDate: periodEnd } = getCycleBounds(viewYear, viewMonth, cycleStartDay);
@@ -108,9 +108,9 @@ export default function AnalisesPage() {
   // Total de renda marcada com a tag configurada como "renda" — base pra
   // sugerir meta de economia (10-30%) no GoalsModal.
   const incomeLogs = filterLogsByGroup(summary.logs || [], ['income']);
-  const incomeTotal = profile?.income_tag_id
+  const incomeTotal = profile?.etiqueta_renda_id
     ? incomeLogs
-        .filter((l) => (l.tag_ids || []).includes(profile.income_tag_id))
+        .filter((l) => (l.tag_ids || []).includes(profile.etiqueta_renda_id))
         .reduce((sum, l) => sum + Number(l.amount || 0), 0)
     : null;
 
@@ -190,7 +190,7 @@ export default function AnalisesPage() {
               <h4>Maiores categorias</h4>
               {insights.top3.map((t) => (
                 <div key={t.id} className={styles.insightRow}>
-                  <span>{t.name}</span>
+                  <span>{t.nome}</span>
                   <span>{t.percent}% · {formatCurrency(t.total)}</span>
                 </div>
               ))}

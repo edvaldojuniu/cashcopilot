@@ -11,7 +11,7 @@ function resolveTagIds(tagNames, tags) {
   const resolved = [];
   const unknown = [];
   (tagNames || []).forEach((name) => {
-    const match = tags.find((t) => t.name.toLowerCase() === String(name).toLowerCase());
+    const match = tags.find((t) => t.nome.toLowerCase() === String(name).toLowerCase());
     if (match) resolved.push(match.id);
     else unknown.push(name);
   });
@@ -21,35 +21,22 @@ function resolveTagIds(tagNames, tags) {
 /**
  * Monta o conjunto de tools (function calling) do assistente para uma única
  * requisição. `financeData` é o snapshot já buscado do Supabase (mesmas
- * tabelas que o FinanceContext busca no client); `supabaseUser` é um client
- * autenticado como o usuário (RLS aplica normalmente) para as tools de
- * escrita. Desacoplado da rota Next de propósito, para poder ser reutilizado
- * por um futuro handler de webhook (WhatsApp/Telegram) sem duplicar lógica.
+ * tabelas que o FinanceContext busca no client — schema em português);
+ * `supabaseUser` é um client autenticado como o usuário (RLS aplica
+ * normalmente) para as tools de escrita. Desacoplado da rota Next de
+ * propósito, para poder ser reutilizado por um futuro handler de webhook
+ * (WhatsApp/Telegram) sem duplicar lógica.
  */
 export function buildAssistantTools({ supabaseUser, userId, financeData, profile }) {
-  const {
-    incomeEntries,
-    fixedExpenses,
-    variableExpenses,
-    cards,
-    cardBills,
-    recurringDailyEntries,
-    verifiedDays,
-    transactions,
-    tags,
-  } = financeData;
+  const { movements, variableExpenses, cards, verifiedDays, tags } = financeData;
 
   const baseForecastParams = {
-    incomeEntries,
-    fixedExpenses,
+    movements,
     variableExpenses,
     cards,
-    cardBills,
-    recurringDailyEntries,
     verifiedDays,
-    transactions,
-    showDailyForecast: profile.show_daily_forecast !== false,
-    cycleStartDay: profile.cycle_start_day ?? 1,
+    showDailyForecast: profile.mostrar_previsao_diaria !== false,
+    cycleStartDay: profile.dia_inicio_ciclo ?? 1,
   };
 
   function monthSummary(year, month) {
@@ -57,7 +44,7 @@ export function buildAssistantTools({ supabaseUser, userId, financeData, profile
       ...baseForecastParams,
       year,
       month,
-      initialBalance: profile.initial_balance,
+      initialBalance: profile.saldo_inicial,
     });
   }
 
@@ -112,7 +99,7 @@ export function buildAssistantTools({ supabaseUser, userId, financeData, profile
       }),
       execute: async ({ tagName, months }) => {
         const tagFilter = tagName
-          ? tags.find((t) => t.name.toLowerCase() === tagName.toLowerCase())
+          ? tags.find((t) => t.nome.toLowerCase() === tagName.toLowerCase())
           : null;
         if (tagName && !tagFilter) return { error: `Tag "${tagName}" não encontrada.` };
 
@@ -145,19 +132,22 @@ export function buildAssistantTools({ supabaseUser, userId, financeData, profile
       }),
       execute: async ({ dateFrom, dateTo, tagName }) => {
         const tagFilter = tagName
-          ? tags.find((t) => t.name.toLowerCase() === tagName.toLowerCase())
+          ? tags.find((t) => t.nome.toLowerCase() === tagName.toLowerCase())
           : null;
-        const items = transactions
-          .filter((t) => t.date >= dateFrom && t.date <= dateTo)
-          .filter((t) => !tagFilter || (t.tag_ids || []).includes(tagFilter.id))
+        // Só lançamentos avulsos (frequencia 'none') — templates recorrentes
+        // são uma definição de série, não um evento datado; nunca entraram
+        // aqui, mesmo antes da unificação.
+        const items = movements
+          .filter((m) => m.frequencia === 'none' && m.data_inicio >= dateFrom && m.data_inicio <= dateTo)
+          .filter((m) => !tagFilter || (m.tag_ids || []).includes(tagFilter.id))
           .slice(0, 200)
-          .map((t) => ({
-            date: t.date,
-            type: t.type,
-            description: t.description,
-            amount: Number(t.amount),
-            tags: (t.tag_ids || [])
-              .map((id) => tags.find((tg) => tg.id === id)?.name)
+          .map((m) => ({
+            date: m.data_inicio,
+            type: m.tipo,
+            description: m.descricao,
+            amount: Number(m.valor),
+            tags: (m.tag_ids || [])
+              .map((id) => tags.find((tg) => tg.id === id)?.nome)
               .filter(Boolean),
           }));
         return { count: items.length, items };
@@ -202,8 +192,8 @@ export function buildAssistantTools({ supabaseUser, userId, financeData, profile
       }),
       execute: async ({ name, color }) => {
         const { data, error } = await supabaseUser
-          .from('tags')
-          .insert({ name, color, user_id: userId })
+          .from('etiquetas')
+          .insert({ nome: name, cor: color, usuario_id: userId })
           .select()
           .single();
         if (error) return { error: error.message };
@@ -246,18 +236,27 @@ export function buildAssistantTools({ supabaseUser, userId, financeData, profile
       execute: async ({ date, amount, description, type, tagNames }) => {
         const { resolved } = resolveTagIds(tagNames, tags);
         const { data, error } = await supabaseUser
-          .from('daily_transactions')
-          .insert({ date, amount, description, type, user_id: userId })
+          .from('movimentacoes')
+          .insert({
+            tipo: type,
+            descricao: description,
+            valor: amount,
+            frequencia: 'none',
+            data_inicio: date,
+            data_fim: date,
+            ativo: true,
+            usuario_id: userId,
+          })
           .select()
           .single();
         if (error) return { error: error.message };
 
         if (resolved.length > 0) {
-          const { error: tagError } = await supabaseUser.from('transaction_tags').insert(
+          const { error: tagError } = await supabaseUser.from('movimentacao_etiquetas').insert(
             resolved.map((tagId) => ({
-              transaction_id: data.id,
-              tag_id: tagId,
-              user_id: userId,
+              movimentacao_id: data.id,
+              etiqueta_id: tagId,
+              usuario_id: userId,
             }))
           );
           if (tagError) return { created: data, tagError: tagError.message };

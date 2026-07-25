@@ -102,7 +102,7 @@ export default function HomePage() {
     return <AuthScreen />;
   }
 
-  const cycleStartDay = profile?.cycle_start_day ?? 1;
+  const cycleStartDay = profile?.dia_inicio_ciclo ?? 1;
 
   return (
     <div className={styles.page}>

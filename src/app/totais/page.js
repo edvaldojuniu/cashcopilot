@@ -7,6 +7,7 @@ import BottomNav from '@/components/BottomNav/BottomNav';
 import MonthNavigator from '@/components/MonthNavigator/MonthNavigator';
 import { formatCurrency, formatCyclePeriodLabel } from '@/lib/utils';
 import { calculateTagTotals } from '@/lib/engine';
+import TagDetailsModal from '@/components/TagDetailsModal/TagDetailsModal';
 import styles from './page.module.css';
 
 export default function TotaisPage() {
@@ -19,13 +20,14 @@ export default function TotaisPage() {
   } = useFinance();
 
   const [activeTab, setActiveTab] = useState('todos');
+  const [selectedTag, setSelectedTag] = useState(null);
 
   const { summary, initialBalance } = useMemo(() => {
     if (!isAuthenticated) return { summary: {}, initialBalance: 0 };
     return getMonthForecast(viewYear, viewMonth);
   }, [isAuthenticated, viewYear, viewMonth, getMonthForecast]);
 
-  const periodLabel = formatCyclePeriodLabel(viewYear, viewMonth, profile?.cycle_start_day ?? 1);
+  const periodLabel = formatCyclePeriodLabel(viewYear, viewMonth, profile?.dia_inicio_ciclo ?? 1);
 
   const cards = [
     {
@@ -158,20 +160,24 @@ export default function TotaisPage() {
               const maxTotal = tagTotals[0].total || 1;
               const pct = Math.max(4, Math.round((tag.total / maxTotal) * 100));
               return (
-                <div key={tag.id} className={styles.tagRow}>
+                <div
+                  key={tag.id}
+                  className={styles.tagRow}
+                  onClick={() => setSelectedTag(tag)}
+                >
                   <div className={styles.tagRowHeader}>
                     <span className={styles.tagRowName}>
-                      <span className={styles.tagDot} style={{ background: tag.color }} />
-                      {tag.name}
+                      <span className={styles.tagDot} style={{ background: tag.cor }} />
+                      {tag.nome}
                     </span>
-                    <span className={styles.tagRowValue} style={{ color: tag.color }}>
+                    <span className={styles.tagRowValue} style={{ color: tag.cor }}>
                       {formatCurrency(tag.total)}
                     </span>
                   </div>
                   <div className={styles.tagBarTrack}>
                     <div
                       className={styles.tagBarFill}
-                      style={{ width: `${pct}%`, background: tag.color }}
+                      style={{ width: `${pct}%`, background: tag.cor }}
                     />
                   </div>
                 </div>
@@ -226,6 +232,13 @@ export default function TotaisPage() {
       </div>
 
       <BottomNav />
+
+      <TagDetailsModal
+        isOpen={!!selectedTag}
+        onClose={() => setSelectedTag(null)}
+        tag={selectedTag}
+        logs={selectedTag ? logs.filter((l) => (l.tag_ids || []).includes(selectedTag.id)) : []}
+      />
     </div>
   );
 }

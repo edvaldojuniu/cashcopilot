@@ -59,14 +59,14 @@ export default function AssistantWidget() {
 
     (async () => {
       const { data } = await supabase
-        .from('assistant_messages')
-        .select('id, role, parts')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
+        .from('mensagens_assistente')
+        .select('id, papel, partes')
+        .eq('usuario_id', user.id)
+        .order('criado_em', { ascending: false })
         .limit(HISTORY_LOAD_LIMIT);
 
       if (data && data.length > 0) {
-        setMessages(data.reverse().map((row) => ({ id: row.id, role: row.role, parts: row.parts })));
+        setMessages(data.reverse().map((row) => ({ id: row.id, role: row.papel, parts: row.partes })));
       }
     })();
   }, [user, sessionReady, setMessages]);

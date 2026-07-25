@@ -15,7 +15,7 @@ const CONTEXT_MESSAGE_LIMIT = 20;
 
 async function saveMessage(supabaseUser, userId, role, parts) {
   try {
-    await supabaseUser.from('assistant_messages').insert({ user_id: userId, role, parts });
+    await supabaseUser.from('mensagens_assistente').insert({ usuario_id: userId, papel: role, partes: parts });
   } catch (err) {
     // Falha ao salvar histórico não deve derrubar a resposta do chat.
     console.error('[Assistant] falha ao salvar mensagem:', err);
@@ -34,22 +34,14 @@ function createUserSupabaseClient(accessToken) {
 
 async function fetchFinanceData(supabaseUser, userId) {
   const results = await Promise.allSettled([
-    supabaseUser.from('income_entries').select('*, income_entry_tags(tag_id)').eq('user_id', userId),
-    supabaseUser.from('fixed_expenses').select('*, fixed_expense_tags(tag_id)').eq('user_id', userId),
-    supabaseUser.from('variable_expenses').select('*').eq('user_id', userId),
-    supabaseUser.from('cards').select('*').eq('user_id', userId),
-    supabaseUser
-      .from('daily_transactions')
-      .select('*, transaction_tags(tag_id)')
-      .eq('user_id', userId)
-      .order('date'),
-    supabaseUser.from('verified_days').select('*').eq('user_id', userId),
-    supabaseUser.from('credit_card_bills').select('*, card_bill_tags(tag_id)').eq('user_id', userId),
-    supabaseUser.from('tags').select('*').eq('user_id', userId),
-    supabaseUser
-      .from('recurring_daily_entries')
-      .select('*, recurring_daily_entry_tags(tag_id)')
-      .eq('user_id', userId),
+    supabaseUser.from('movimentacoes').select('*, movimentacao_etiquetas(etiqueta_id)').eq('usuario_id', userId).order('data_inicio'),
+    supabaseUser.from('gastos_variaveis').select('*').eq('usuario_id', userId),
+    supabaseUser.from('cartoes').select('*').eq('usuario_id', userId),
+    supabaseUser.from('dias_verificados').select('*').eq('usuario_id', userId),
+    supabaseUser.from('etiquetas').select('*').eq('usuario_id', userId),
+    // Exceções numa query própria — mesmo motivo do FinanceContext no
+    // client: nunca embutir esse join na query-mãe.
+    supabaseUser.from('movimentacao_excecoes').select('movimentacao_id, data_excecao').eq('usuario_id', userId),
   ]);
 
   const extract = (i) => {
@@ -57,27 +49,32 @@ async function fetchFinanceData(supabaseUser, userId) {
     return r.status === 'fulfilled' && !r.value.error ? r.value.data ?? [] : [];
   };
 
-  // Achata a relação N:N de tags (transaction_tags / *_tags) num array
-  // simples tag_ids — mesmo padrão do FinanceContext no client.
-  const withFlatTagIds = (rows, joinKey) =>
+  // Achata a relação N:N de tags (movimentacao_etiquetas) num array simples
+  // tag_ids, e agrupa as exceções por movimentacao_id — mesmo padrão do
+  // FinanceContext no client.
+  const withFlatTagIds = (rows) =>
     rows.map((r) => ({
       ...r,
-      tag_ids: (r[joinKey] ?? []).map((j) => j.tag_id),
-      [joinKey]: undefined,
+      tag_ids: (r.movimentacao_etiquetas ?? []).map((j) => j.etiqueta_id),
+      movimentacao_etiquetas: undefined,
     }));
 
-  const transactions = withFlatTagIds(extract(4), 'transaction_tags');
+  const withExceptions = (rows, exceptionRows) => {
+    const byMovId = new Map();
+    exceptionRows.forEach((ex) => {
+      const list = byMovId.get(ex.movimentacao_id) ?? [];
+      list.push(ex.data_excecao);
+      byMovId.set(ex.movimentacao_id, list);
+    });
+    return rows.map((r) => ({ ...r, exception_dates: byMovId.get(r.id) ?? [] }));
+  };
 
   return {
-    incomeEntries: withFlatTagIds(extract(0), 'income_entry_tags'),
-    fixedExpenses: withFlatTagIds(extract(1), 'fixed_expense_tags'),
-    variableExpenses: extract(2),
-    cards: extract(3),
-    transactions,
-    verifiedDays: extract(5),
-    cardBills: withFlatTagIds(extract(6), 'card_bill_tags'),
-    tags: extract(7),
-    recurringDailyEntries: withFlatTagIds(extract(8), 'recurring_daily_entry_tags'),
+    movements: withExceptions(withFlatTagIds(extract(0)), extract(5)),
+    variableExpenses: extract(1),
+    cards: extract(2),
+    verifiedDays: extract(3),
+    tags: extract(4),
   };
 }
 
@@ -116,7 +113,7 @@ export async function POST(req) {
     }
 
     const { data: profile } = await supabaseUser
-      .from('profiles')
+      .from('perfis')
       .select('*')
       .eq('id', user.id)
       .single();

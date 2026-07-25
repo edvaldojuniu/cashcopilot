@@ -1,5 +1,5 @@
 export function buildSystemPrompt({ profile, todayStr }) {
-  const cycleStartDay = profile?.cycle_start_day ?? 1;
+  const cycleStartDay = profile?.dia_inicio_ciclo ?? 1;
   const cycleNote =
     cycleStartDay > 1
       ? `O ciclo financeiro do usuário NÃO começa no dia 1 do mês — começa no dia ${cycleStartDay}. Por exemplo, "julho" para ele pode ir de ${cycleStartDay}/07 até ${cycleStartDay - 1}/08.`

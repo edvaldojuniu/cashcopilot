@@ -60,7 +60,7 @@ export function buildInsights({ tagTotals, previousTagTotals = [], total, previo
 
   if (top3[0] && top3[0].percent >= 40) {
     recommendations.push(
-      `"${top3[0].name}" sozinha responde por ${top3[0].percent}% do total — vale olhar de perto se dá pra reduzir.`
+      `"${top3[0].nome}" sozinha responde por ${top3[0].percent}% do total — vale olhar de perto se dá pra reduzir.`
     );
   }
 
@@ -69,7 +69,7 @@ export function buildInsights({ tagTotals, previousTagTotals = [], total, previo
     .sort((a, b) => b.changePercent - a.changePercent)[0];
   if (grownTag) {
     recommendations.push(
-      `"${grownTag.name}" cresceu ${grownTag.changePercent}% em relação ao período anterior.`
+      `"${grownTag.nome}" cresceu ${grownTag.changePercent}% em relação ao período anterior.`
     );
   }
 

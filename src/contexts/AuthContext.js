@@ -91,7 +91,7 @@ export function AuthProvider({ children }) {
     if (!supabase) return;
     try {
       const { data, error } = await supabase
-        .from('profiles')
+        .from('perfis')
         .select('*')
         .eq('id', userId)
         .single();
@@ -100,8 +100,8 @@ export function AuthProvider({ children }) {
 
       if (error && error.code === 'PGRST116') {
         const { data: newProfile } = await supabase
-          .from('profiles')
-          .insert({ id: userId, name: '', initial_balance: 0 })
+          .from('perfis')
+          .insert({ id: userId, nome: '', saldo_inicial: 0 })
           .select()
           .single();
         if (isMountedRef.current) setProfile(newProfile);
@@ -118,7 +118,7 @@ export function AuthProvider({ children }) {
   async function updateProfile(updates) {
     if (!user || !supabase) return;
     const { data, error } = await supabase
-      .from('profiles')
+      .from('perfis')
       .update(updates)
       .eq('id', user.id)
       .select()
@@ -150,7 +150,7 @@ export function AuthProvider({ children }) {
     if (!supabase) return;
 
     if (user?.id) {
-      try { localStorage.removeItem(`cc_finance_${user.id}_v1`); } catch (_) {}
+      try { localStorage.removeItem(`cc_finance_${user.id}_v2`); } catch (_) {}
     }
 
     // Wipe the token synchronously so a hard-refresh after redirect
@@ -189,7 +189,7 @@ export function AuthProvider({ children }) {
     updateProfile,
     isAuthenticated: !!user,
     isOnboarded:
-      profile?.initial_balance != null && profile?.initial_balance !== 0,
+      profile?.saldo_inicial != null && profile?.saldo_inicial !== 0,
   };
 
   return (

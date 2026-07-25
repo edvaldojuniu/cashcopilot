@@ -35,15 +35,15 @@ const DATE_LABELS = {
 
 const RECURRING_END_TYPES = ['monthly', 'weekly', 'daily'];
 
+// Valor do <select> de Tipo (espaço da UI) → valor da coluna `tipo` em
+// movimentacoes (espaço do banco) — só "diario" precisa de tradução, o
+// resto já bate 1:1.
+function toDbType(uiType) {
+  return uiType === 'diario' ? 'daily' : uiType;
+}
+
 export default function QuickAddModal({ isOpen, onClose, initialType = 'diario', editData = null, defaultDate = null }) {
-  const {
-    addTransaction, addFixedExpense, addIncomeEntry, addCardBill,
-    addRecurringDailyEntry, updateRecurringDailyEntry, deleteRecurringDailyEntry,
-    updateTransaction, updateFixedExpense, updateIncomeEntry,
-    deleteTransaction, deleteFixedExpense, deleteIncomeEntry,
-    addRecurrenceException,
-    cards
-  } = useFinance();
+  const { addMovement, updateMovement, deleteMovement, addMovementException, cards } = useFinance();
 
   useBackButtonClose(isOpen, onClose);
 
@@ -77,15 +77,15 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
           editType === 'card' ? rawDesc.replace(/ \([^)]*\)$/, '') : rawDesc
         );
         setTagIds(editData.tag_ids ?? []);
-        if (editData.card_id) setCardId(editData.card_id);
+        if (editData.cartao_id) setCardId(editData.cartao_id);
 
-        // Lançamento avulso de verdade (daily_transactions, sem template por
-        // trás) — cartão só é editável nessa forma; diário/economia podem
-        // ser avulsos OU ocorrência de um template recorrente (isTemplate).
-        const isOneOff =
-          !editData.isTemplate &&
-          editData.date &&
-          (editType === 'diario' || editType === 'saving' || editType === 'card');
+        // Toda movimentação (entrada, saída, cartão, diário, economia) mora
+        // hoje na mesma tabela — "avulso" é só frequencia === 'none', não
+        // importa o tipo. Prefere a data da OCORRÊNCIA clicada (editData.date,
+        // vinda do dia específico que o usuário abriu) sobre a data_inicio
+        // original — isso é o que permite "atualizar esta e as próximas" a
+        // partir de qualquer ponto da série, não só do início.
+        const isOneOff = editData.frequencia === 'none';
 
         if (isOneOff) {
           setDate(editData.date);
@@ -94,15 +94,9 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
           setEndMode('infinite');
           setCount(2);
         } else {
-          // income_entries / fixed_expenses / recurring_daily_entries —
-          // todos usam start_date/end_date/frequency. Prefere a data da
-          // OCORRÊNCIA clicada (editData.date, vinda do dia específico que
-          // o usuário abriu) sobre o start_date original do template —
-          // isso é o que permite "atualizar esta e as próximas" a partir
-          // de qualquer ponto da série, não só do início.
-          const freq = editData.frequency || 'none';
-          const effectiveStartDate = editData.date || editData.start_date;
-          const endDate = editData.end_date;
+          const freq = editData.frequencia || 'none';
+          const effectiveStartDate = editData.date || editData.data_inicio;
+          const endDate = editData.data_fim;
           const rawAmount = Number(editData.amount) || 0;
 
           setDate(effectiveStartDate || new Date().toISOString().split('T')[0]);
@@ -156,152 +150,73 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
     }
   }
 
-  // income/expense sempre vivem numa tabela de template — "recorrente" pra
-  // elas é qualquer frequency != 'none'. diario/saving só são template
-  // quando isTemplate (senão é lançamento avulso comum). Cartão nunca passa
-  // por aqui (edição de fatura recorrente não é suportada por este modal).
+  // Toda movimentação vive na mesma tabela agora — "recorrente" é só
+  // frequencia !== 'none', vale igual pros 5 tipos.
   function isRecurringEdit() {
-    if (!editData) return false;
-    if (type === 'income' || type === 'expense') {
-      return !!editData.frequency && editData.frequency !== 'none';
-    }
-    if (type === 'diario' || type === 'saving') {
-      return !!editData.isTemplate;
-    }
-    return false;
-  }
-
-  function getTemplateFns(forType) {
-    if (forType === 'income') {
-      return { entryType: 'income', add: addIncomeEntry, update: updateIncomeEntry, remove: deleteIncomeEntry };
-    }
-    if (forType === 'expense') {
-      return { entryType: 'expense', add: addFixedExpense, update: updateFixedExpense, remove: deleteFixedExpense };
-    }
-    return { entryType: 'recurring_daily', add: addRecurringDailyEntry, update: updateRecurringDailyEntry, remove: deleteRecurringDailyEntry };
+    return !!editData && editData.frequencia !== 'none';
   }
 
   // "Somente esta": marca a ocorrência original como exceção (some da série)
-  // e cria um lançamento avulso (frequency 'none') só nessa data, já com os
-  // valores editados.
-  async function saveOnlyThisOccurrence({ entryType, add, base }) {
-    const occurrenceDate = editData.date || editData.start_date;
-    const { error: excError } = await addRecurrenceException(entryType, editData.id, occurrenceDate);
+  // e cria uma movimentação avulsa (frequencia 'none') só nessa data, já com
+  // os valores editados.
+  async function saveOnlyThisOccurrence(base) {
+    const occurrenceDate = editData.date || editData.data_inicio;
+    const { error: excError } = await addMovementException(editData.id, occurrenceDate);
     if (excError) return { error: excError };
-    return add({ ...base, frequency: 'none', start_date: date, end_date: date });
+    return addMovement({ ...base, frequencia: 'none', data_inicio: date, data_fim: date });
   }
 
   // "Esta e as próximas": se for a primeira ocorrência da série, é só uma
-  // edição normal do template inteiro. Senão, trunca o original até o dia
-  // anterior (preserva o passado) e cria um novo template a partir daqui.
-  async function saveThisAndFuture({ add, update, base, recurrencePayload }) {
+  // edição normal da linha inteira. Senão, trunca a original até o dia
+  // anterior (preserva o passado) e cria uma nova a partir daqui.
+  async function saveThisAndFuture(base, recurrencePayload) {
     const occurrenceDate = date;
-    if (occurrenceDate === editData.start_date) {
-      return update(editData.id, { ...base, ...recurrencePayload });
+    if (occurrenceDate === editData.data_inicio) {
+      return updateMovement(editData.id, { ...base, ...recurrencePayload });
     }
-    const truncateResult = await update(editData.id, { end_date: addDays(occurrenceDate, -1) });
+    const truncateResult = await updateMovement(editData.id, { data_fim: addDays(occurrenceDate, -1) });
     if (truncateResult.error) return truncateResult;
-    return add({ ...base, ...recurrencePayload });
+    return addMovement({ ...base, ...recurrencePayload });
   }
 
   async function performSave(scopeChoice) {
     setIsSubmitting(true);
 
+    if (type === 'card' && cards.length === 0) {
+      alert('Você não possui cartões cadastrados. Vá em Config → Cartões.');
+      setIsSubmitting(false);
+      return;
+    }
+
     const val = parseFloat(amount.replace(',', '.'));
     const isEdit = !!editData;
     const finalAmount = frequency === 'installment' ? val / count : val;
+    const isOneOffCard = type === 'card' && frequency === 'none';
+    const cardName = cards.find(c => c.id === cardId)?.nome || 'Cartão';
+    // Compra avulsa de cartão ganha o nome do cartão embutido na descrição
+    // (mesma convenção de sempre); fatura recorrente/parcelada não.
+    const finalDescription = isOneOffCard ? `${description} (${cardName})` : description;
+
+    const base = {
+      tipo: toDbType(type),
+      descricao: finalDescription,
+      valor: finalAmount,
+      cartao_id: type === 'card' ? cardId : null,
+      ativo: true,
+      tagIds,
+    };
+    const recurrencePayload = buildRecurrencePayload({ frequency, endMode, count, date });
+
     let result;
-
     try {
-      if (type === 'income' || type === 'expense') {
-        const { entryType, add, update } = getTemplateFns(type);
-        const base = { description, amount: finalAmount, is_active: true, tagIds };
-        const recurrencePayload = buildRecurrencePayload({ frequency, endMode, count, date });
-
-        if (!isEdit || !scopeChoice) {
-          result = isEdit
-            ? await update(editData.id, { ...base, ...recurrencePayload })
-            : await add({ ...base, ...recurrencePayload });
-        } else if (scopeChoice === 'only') {
-          result = await saveOnlyThisOccurrence({ entryType, add, base });
-        } else {
-          result = await saveThisAndFuture({ add, update, base, recurrencePayload });
-        }
-      }
-      else if (type === 'diario' || type === 'saving') {
-        const targetsTemplate = isEdit ? editData.isTemplate : frequency !== 'none';
-        if (!targetsTemplate) {
-          const payload = {
-            description,
-            amount: val,
-            date,
-            type: type === 'saving' ? 'saving' : 'daily',
-            tagIds,
-          };
-          result = isEdit ? await updateTransaction(editData.id, payload) : await addTransaction(payload);
-        } else {
-          const { entryType, add, update } = getTemplateFns(type);
-          const base = {
-            kind: type === 'saving' ? 'saving' : 'daily',
-            description,
-            amount: finalAmount,
-            is_active: true,
-            tagIds,
-          };
-          const recurrencePayload = buildRecurrencePayload({ frequency, endMode, count, date });
-
-          if (!isEdit || !scopeChoice) {
-            result = isEdit
-              ? await update(editData.id, { ...base, ...recurrencePayload })
-              : await add({ ...base, ...recurrencePayload });
-          } else if (scopeChoice === 'only') {
-            result = await saveOnlyThisOccurrence({ entryType, add, base });
-          } else {
-            result = await saveThisAndFuture({ add, update, base, recurrencePayload });
-          }
-        }
-      }
-      else if (type === 'card') {
-        if (cards.length === 0) {
-          alert('Você não possui cartões cadastrados. Vá em Config → Cartões.');
-          return;
-        }
-        const selCard = cards.find(c => c.id === cardId);
-        const cName = selCard ? selCard.name : 'Cartão';
-
-        if (isEdit) {
-          // Edição só é permitida para compras avulsas (tabela daily_transactions);
-          // faturas/parcelas recorrentes não são editáveis por este modal.
-          result = await updateTransaction(editData.id, {
-            description: `${description} (${cName})`,
-            amount: val,
-            date,
-            card_id: cardId,
-            tagIds,
-          });
-        } else if (frequency === 'none') {
-          // Lançamento pontual: vai pro diário para aparecer no dia da compra e somar na fatura dinamicamente
-          result = await addTransaction({
-            description: `${description} (${cName})`,
-            amount: val,
-            date,
-            type: 'card', // IMPORTANTE: tipo card fará o engine somá-lo na fatura dinamicamente
-            card_id: cardId,
-            tagIds,
-          });
-        } else {
-          // Lançamento recorrente/parcelado: vai para a tabela de faturas fixas/parceladas
-          const payload = {
-            card_name: cName,
-            card_id: cardId,
-            description,
-            amount: finalAmount,
-            is_active: true,
-            tagIds,
-            ...buildRecurrencePayload({ frequency, endMode, count, date }),
-          };
-          result = await addCardBill(payload);
-        }
+      if (!isEdit || !scopeChoice) {
+        result = isEdit
+          ? await updateMovement(editData.id, { ...base, ...recurrencePayload })
+          : await addMovement({ ...base, ...recurrencePayload });
+      } else if (scopeChoice === 'only') {
+        result = await saveOnlyThisOccurrence(base);
+      } else {
+        result = await saveThisAndFuture(base, recurrencePayload);
       }
 
       if (result?.error) {
@@ -311,7 +226,7 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
       }
 
       onClose();
-    } catch(err) {
+    } catch (err) {
       console.error(err);
       alert('Erro ao salvar. Verifique sua conexão.');
     } finally {
@@ -320,37 +235,24 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
     }
   }
 
-  async function performRecurringDelete({ entryType, update, remove, scopeChoice }) {
-    const occurrenceDate = editData.date || editData.start_date;
+  async function performRecurringDelete(scopeChoice) {
+    const occurrenceDate = editData.date || editData.data_inicio;
     if (scopeChoice === 'only') {
-      return addRecurrenceException(entryType, editData.id, occurrenceDate);
+      return addMovementException(editData.id, occurrenceDate);
     }
     // 'future'
-    if (occurrenceDate === editData.start_date) {
-      return remove(editData.id);
+    if (occurrenceDate === editData.data_inicio) {
+      return deleteMovement(editData.id);
     }
-    return update(editData.id, { end_date: addDays(occurrenceDate, -1) });
+    return updateMovement(editData.id, { data_fim: addDays(occurrenceDate, -1) });
   }
 
   async function performDelete(scopeChoice) {
     setIsDeleting(true);
     try {
-      let result;
-      if (type === 'card') {
-        result = await deleteTransaction(editData.id);
-      } else if (type === 'diario' || type === 'saving') {
-        if (!editData.isTemplate) {
-          result = await deleteTransaction(editData.id);
-        } else if (scopeChoice) {
-          result = await performRecurringDelete({ ...getTemplateFns(type), scopeChoice });
-        } else {
-          result = await deleteRecurringDailyEntry(editData.id);
-        }
-      } else if (type === 'expense' || type === 'income') {
-        result = scopeChoice
-          ? await performRecurringDelete({ ...getTemplateFns(type), scopeChoice })
-          : await (type === 'expense' ? deleteFixedExpense(editData.id) : deleteIncomeEntry(editData.id));
-      }
+      const result = scopeChoice
+        ? await performRecurringDelete(scopeChoice)
+        : await deleteMovement(editData.id);
 
       if (result?.error) {
         console.error('[QuickAddModal] delete failed:', result.error);
@@ -370,7 +272,10 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (isRecurringEdit()) {
+    // Trocar o tipo é sempre uma edição de linha inteira (não existe "só
+    // esta ocorrência" pra uma mudança de tipo) — pula o modal de escopo.
+    const typeChanged = !!editData && editData.type !== type;
+    if (!typeChanged && isRecurringEdit()) {
       setScopeContext('edit');
       setScopeModalOpen(true);
       return;
@@ -394,19 +299,9 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
     else await performDelete(choice);
   }
 
-  // Repetição só é editável em: lançamento novo, entrada/saída (sempre
-  // usam tabela de template independente da frequência), ou uma ocorrência
-  // de template recorrente de diário/economia. Cartão só permite escolher
-  // ao criar (edição é sempre de compra avulsa).
-  const showFrequencySelect = type === 'card'
-    ? !editData
-    : (!editData || type === 'income' || type === 'expense' || editData.isTemplate);
-
   const frequencyOptions = type === 'card' ? CARD_FREQUENCY_OPTIONS : FULL_FREQUENCY_OPTIONS;
-  const showEndModeSelect = showFrequencySelect && RECURRING_END_TYPES.includes(frequency);
-  const showStepper =
-    showFrequencySelect &&
-    (frequency === 'installment' || (RECURRING_END_TYPES.includes(frequency) && endMode === 'count'));
+  const showEndModeSelect = RECURRING_END_TYPES.includes(frequency);
+  const showStepper = frequency === 'installment' || (RECURRING_END_TYPES.includes(frequency) && endMode === 'count');
 
   const rawTotal = parseFloat((amount || '0').replace(',', '.')) || 0;
   const stepperLabel = frequency === 'installment'
@@ -425,7 +320,7 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
 
           <div className={styles.formGroup}>
             <label>Tipo</label>
-            <select value={type} onChange={e => handleTypeChange(e.target.value)} disabled={!!editData}>
+            <select value={type} onChange={e => handleTypeChange(e.target.value)}>
               <option value="diario">Gasto no Dia-a-Dia</option>
               <option value="saving">Economia (Retirada)</option>
               <option value="card">Gasto no Cartão de Crédito</option>
@@ -453,21 +348,19 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
             <div className={styles.formGroup}>
               <label>Cartão</label>
               <select value={cardId} onChange={e => setCardId(e.target.value)} required>
-                {cards.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {cards.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
               </select>
             </div>
           )}
 
-          {showFrequencySelect && (
-            <div className={styles.formGroup}>
-              <label>Repetição</label>
-              <select value={frequency} onChange={e => setFrequency(e.target.value)}>
-                {frequencyOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          <div className={styles.formGroup}>
+            <label>Repetição</label>
+            <select value={frequency} onChange={e => setFrequency(e.target.value)}>
+              {frequencyOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
 
           {showEndModeSelect && (
             <div className={styles.formGroup}>
