@@ -67,6 +67,10 @@ export default function HomePage() {
   // período visível, centraliza nele; senão volta para o início — sem isso,
   // navegar pra um período onde hoje não aparece deixava a rolagem parada
   // onde estava, escondendo o começo da nova coluna sem o usuário perceber.
+  // IMPORTANTE: não inclui `monthsData` nas deps de propósito — esse array
+  // ganha uma referência nova toda vez que uma movimentação é salva (não só
+  // ao trocar de período), e isso fazia a tela "pular" de volta pro topo
+  // toda vez que o usuário editava um lançamento no meio da lista.
   useEffect(() => {
     if (todayRef.current) {
       todayRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -79,7 +83,7 @@ export default function HomePage() {
       // navegador de período e o início da lista.
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  }, [viewMonth, viewYear, monthsData, maxMonths]);
+  }, [viewMonth, viewYear, maxMonths]);
 
   // Loading state
   if (authLoading) {
