@@ -6,7 +6,7 @@ const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // Apagar o usuário do auth.users exige a service-role key (operação
 // administrativa, não pode ser feita com a anon key do client). Todas as
-// tabelas referenciam profiles(id) ON DELETE CASCADE, e profiles referencia
+// tabelas referenciam perfis(id) ON DELETE CASCADE, e perfis referencia
 // auth.users(id) ON DELETE CASCADE — apagar o usuário já apaga tudo em
 // cascata, sem precisar zerar tabela por tabela aqui.
 export async function DELETE(req) {

@@ -159,7 +159,7 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
                         >
                           <div className={styles.itemInfo}>
                             <span className={styles.itemDesc}>{txn.description}</span>
-                            <span className={styles.itemType}>Compra Avulsa</span>
+                            <span className={styles.itemType}>{txn.frequencia === 'none' ? 'Compra Avulsa' : 'Assinatura/Recorrente'}</span>
                           </div>
                           <span className={`${styles.itemAmount} ${styles.amountCard}`}>
                             {formatCurrency(txn.amount)}

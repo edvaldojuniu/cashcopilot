@@ -162,13 +162,21 @@ export function generateMonthForecast({
           return mDate >= closePrev && mDate < closeCurrent;
         });
 
-        // 2) Procurar parcelamentos e assinaturas ativas para ESTE cartão que fecham neste dia
-        // (Cartão só admite frequencia 'none'/'monthly'/'installment' — nunca
-        // semanal/diário — então cada template casa no máximo uma vez por mês.)
+        // 2) Procurar parcelamentos e assinaturas ativas para ESTE cartão cuja
+        // cobrança cai em ALGUM dia dentro da janela desta fatura — o dia de
+        // cobrança de uma assinatura (ex: dia 21) não precisa coincidir com o
+        // dia de fechamento do cartão (ex: dia 23). Antes isso só casava
+        // quando os dois dias eram iguais, então uma assinatura cobrando em
+        // dia diferente do fechamento nunca entrava em fatura nenhuma.
         const installmentsForThisCard = [];
         movements.forEach(cb => {
           if (cb.tipo !== 'card' || cb.frequencia === 'none' || cb.cartao_id !== c.id) return;
-          if (!matchesRecurrence(cb, currentLoopDate)) return;
+
+          let chargeDate = null;
+          for (let d = new Date(closePrev); d < closeCurrent; d.setDate(d.getDate() + 1)) {
+            if (matchesRecurrence(cb, d)) { chargeDate = new Date(d); break; }
+          }
+          if (!chargeDate) return;
 
           let description = cb.descricao || `Parcelamento/Assinatura`;
           // Só numera parcelamento de verdade (tem fim). Assinatura sem
@@ -177,7 +185,7 @@ export function generateMonthForecast({
             const start = toLocalMidnight(cb.data_inicio);
             const end = toLocalMidnight(cb.data_fim);
             const totalInstallments = monthsBetweenDates(start, end) + 1;
-            const currentInstallment = monthsBetweenDates(start, currentLoopDate) + 1;
+            const currentInstallment = monthsBetweenDates(start, chargeDate) + 1;
             description = `${description} (${currentInstallment}/${totalInstallments})`;
           }
 
@@ -186,7 +194,9 @@ export function generateMonthForecast({
             description,
             amount: Number(cb.valor),
             type: 'card_installment',
-            date: dateStr // Para exibição no modal
+            // Dia real da cobrança (não o dia de fechamento) — pra exibir
+            // corretamente no detalhamento da fatura.
+            date: `${chargeDate.getFullYear()}-${String(chargeDate.getMonth() + 1).padStart(2, '0')}-${String(chargeDate.getDate()).padStart(2, '0')}`
           });
         });
 
@@ -234,9 +244,13 @@ export function generateMonthForecast({
       .map(m => toOccurrence(m, 'daily', dateStr));
     const totalRealDaily = dailyTxnsReal.reduce((sum, t) => sum + Number(t.amount), 0);
 
-    // Gastos reais avulsos no cartão (Pingo Diário do Cartão)
+    // Compras avulsas no cartão E assinaturas/parcelas recorrentes no seu
+    // próprio dia de cobrança (ex: assinatura que cobra todo dia 21, mesmo
+    // com o cartão fechando dia 23) — aparecem aqui além de entrarem
+    // agregadas na fatura no fechamento, mesma lógica de dupla exibição que
+    // uma compra avulsa já tinha.
     const cardTxnsReal = movements
-      .filter(m => m.tipo === 'card' && m.frequencia === 'none' && matchesRecurrence(m, currentLoopDate))
+      .filter(m => m.tipo === 'card' && matchesRecurrence(m, currentLoopDate))
       .map(m => toOccurrence(m, 'card', dateStr));
     const totalRealCardDaily = cardTxnsReal.reduce((sum, t) => sum + Number(t.amount), 0);
 
@@ -334,10 +348,17 @@ export function calculateMonthlySummary(forecast) {
   forecast.forEach(d => {
     // Incomes
     d.incomes.forEach(i => logs.push({ ...i, logDate: d.dateStr, group: 'income' }));
-    // Expenses (Fixed + Card)
-    d.expenses.forEach(e => logs.push({ ...e, logDate: d.dateStr, group: e.type === 'card' ? 'card' : 'fixed' }));
-    // Transactions (Daily + Savings)
-    d.transactions.forEach(t => logs.push({ ...t, logDate: d.dateStr, group: t.type === 'saving' ? 'saving' : 'daily' }));
+    // Expenses (só Fixed) — a "Fatura X" (type==='card') é só a SOMA exibida
+    // na tela pra aquele dia de fechamento; os lançamentos que a compõem já
+    // entram individualmente logo abaixo (compra avulsa e cobrança de
+    // assinatura/parcela no próprio dia). Incluir a fatura agregada aqui
+    // TAMBÉM contaria a mesma compra duas vezes nos totais de Totais/Análises.
+    d.expenses.forEach(e => { if (e.type !== 'card') logs.push({ ...e, logDate: d.dateStr, group: 'fixed' }); });
+    // Transactions (Daily + Card + Savings) — bug pré-existente: compras de
+    // cartão dentro de `transactions` caíam todas em "daily" por não terem
+    // um branch próprio aqui, sumindo da aba/categoria "Cartão" em Totais e
+    // Análises mesmo aparecendo certo na célula do dia.
+    d.transactions.forEach(t => logs.push({ ...t, logDate: d.dateStr, group: t.type === 'saving' ? 'saving' : t.type === 'card' ? 'card' : 'daily' }));
     // Diário/Economia recorrentes (templates)
     d.recurringDaily.forEach(e => logs.push({ ...e, logDate: d.dateStr, group: 'daily' }));
     d.recurringSavings.forEach(e => logs.push({ ...e, logDate: d.dateStr, group: 'saving' }));
