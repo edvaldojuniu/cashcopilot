@@ -179,14 +179,16 @@ export function generateMonthForecast({
           if (!chargeDate) return;
 
           let description = cb.descricao || `Parcelamento/Assinatura`;
-          // Só numera parcelamento de verdade (tem fim). Assinatura sem
-          // fim (data_fim null) não ganha "(n/total)".
-          if (cb.frequencia === 'installment' && cb.data_fim) {
+          // Tem fim definido (mensal com repetições contadas, ou parcelado)
+          // → numera a parcela atual "(N/M)". Recorrente sem fim → "(assinatura)".
+          if (cb.data_fim) {
             const start = toLocalMidnight(cb.data_inicio);
             const end = toLocalMidnight(cb.data_fim);
             const totalInstallments = monthsBetweenDates(start, end) + 1;
             const currentInstallment = monthsBetweenDates(start, chargeDate) + 1;
             description = `${description} (${currentInstallment}/${totalInstallments})`;
+          } else {
+            description = `${description} (assinatura)`;
           }
 
           installmentsForThisCard.push({
