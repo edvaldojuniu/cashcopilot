@@ -84,10 +84,19 @@ export default function InvoiceDetailsModal({ isOpen, onClose, invoice }) {
           <div className={styles.itemList}>
             {items && items.length > 0 ? items.map((item, i) => {
               const d = new Date(`${item.date}T12:00:00`);
+              // Compra avulsa salva o nome do cartão embutido na descrição
+              // (útil em listas genéricas, tipo o detalhamento do dia) — aqui
+              // dentro da própria fatura isso é redundante, o título já diz
+              // qual cartão é. Só compra avulsa tem esse sufixo (item.type
+              // === 'card'); parcela/assinatura recorrente (card_installment)
+              // já tem seu próprio sufixo "(N/M)"/"(assinatura)", não mexe.
+              const displayDesc = item.type === 'card'
+                ? item.description.replace(/ \([^)]*\)$/, '')
+                : item.description;
               return (
                 <div key={i} className={styles.item}>
                   <div className={styles.itemInfo}>
-                    <span className={styles.itemDesc}>{item.description}</span>
+                    <span className={styles.itemDesc}>{displayDesc}</span>
                     <span className={styles.itemDate}>{d.getDate()} de {monthNames[d.getMonth()]}</span>
                   </div>
                   <span className={styles.itemAmount}>
