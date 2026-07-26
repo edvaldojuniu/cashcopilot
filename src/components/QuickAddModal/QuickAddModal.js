@@ -148,6 +148,14 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
     if (newType === 'card' && (frequency === 'weekly' || frequency === 'daily')) {
       setFrequency('none');
     }
+    // Trocar PRA cartão a partir de outro tipo (ex: editando uma Saída Fixa
+    // e mudando pra Cartão) — cardId nunca foi preenchido nesse caso (só é
+    // populado a partir de editData.cartao_id ou ao abrir um lançamento novo
+    // já como cartão), então ficava "" e ia assim pro banco, quebrando o
+    // INSERT/UPDATE com "invalid input syntax for type uuid".
+    if (newType === 'card' && !cardId && cards.length > 0) {
+      setCardId(cards[0].id);
+    }
   }
 
   // Toda movimentação vive na mesma tabela agora — "recorrente" é só
@@ -184,6 +192,11 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
 
     if (type === 'card' && cards.length === 0) {
       alert('Você não possui cartões cadastrados. Vá em Config → Cartões.');
+      setIsSubmitting(false);
+      return;
+    }
+    if (type === 'card' && !cardId) {
+      alert('Selecione um cartão.');
       setIsSubmitting(false);
       return;
     }
