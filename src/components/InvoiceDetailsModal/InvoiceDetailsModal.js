@@ -9,15 +9,39 @@ import { buildRecurrencePayload } from '@/lib/recurrence';
 
 export default function InvoiceDetailsModal({ isOpen, onClose, invoice }) {
   const [payDate, setPayDate] = useState('');
-  const { addMovement } = useFinance();
+  const { addMovement, setCardClosing } = useFinance();
   const [saving, setSaving] = useState(false);
+  const [isEditingClosing, setIsEditingClosing] = useState(false);
+  const [newClosingDate, setNewClosingDate] = useState('');
+  const [adjustingClosing, setAdjustingClosing] = useState(false);
 
   useBackButtonClose(isOpen, onClose);
 
   if (!isOpen || !invoice) return null;
 
-  const { description, originalTotal, alreadyPaid, amount, items, card_id, mes_referencia } = invoice;
+  const { description, originalTotal, alreadyPaid, amount, items, card_id, mes_referencia, data_fechamento } = invoice;
   const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+  const closingDateObj = data_fechamento ? new Date(`${data_fechamento}T12:00:00`) : null;
+
+  const handleStartEditClosing = () => {
+    setNewClosingDate(data_fechamento || '');
+    setIsEditingClosing(true);
+  };
+
+  const handleAdjustClosing = async () => {
+    if (!newClosingDate) return;
+    setAdjustingClosing(true);
+    const { error } = await setCardClosing(card_id, mes_referencia, newClosingDate);
+    setAdjustingClosing(false);
+    if (error) {
+      alert('Erro ao corrigir o fechamento: ' + error.message);
+    } else {
+      // O conteúdo desta fatura pode ter mudado (lançamentos podem ter
+      // migrado pra fatura anterior/seguinte) — fecha pro usuário conferir
+      // a tela atualizada em vez de mostrar um snapshot desatualizado.
+      onClose();
+    }
+  };
 
   const handlePay = async () => {
     if (!payDate) {
@@ -122,14 +146,49 @@ export default function InvoiceDetailsModal({ isOpen, onClose, invoice }) {
                 onChange={(e) => setPayDate(e.target.value)} 
                 className={styles.dateInput}
               />
-              <button 
-                className={styles.payBtn} 
+              <button
+                className={styles.payBtn}
                 onClick={handlePay}
                 disabled={saving}
               >
                 {saving ? '...' : `Pagar ${formatCurrency(amount)}`}
               </button>
             </div>
+          </div>
+        )}
+
+        {closingDateObj && (
+          <div className={styles.paymentSection}>
+            <div className={styles.closingRow}>
+              <h4>
+                Fechamento: {closingDateObj.getDate()} de {monthNames[closingDateObj.getMonth()]}
+              </h4>
+              {!isEditingClosing && (
+                <button type="button" className={styles.editClosingBtn} onClick={handleStartEditClosing}>
+                  Corrigir data
+                </button>
+              )}
+            </div>
+            {isEditingClosing && (
+              <>
+                <p>O fechamento real do cartão nem sempre cai no mesmo dia todo mês. Ajuste aqui pra este mês — as compras que ficaram do lado errado da nova data são movidas automaticamente pra fatura certa.</p>
+                <div className={styles.inputGroup}>
+                  <input
+                    type="date"
+                    value={newClosingDate}
+                    onChange={(e) => setNewClosingDate(e.target.value)}
+                    className={styles.dateInput}
+                  />
+                  <button
+                    className={styles.payBtn}
+                    onClick={handleAdjustClosing}
+                    disabled={adjustingClosing || !newClosingDate}
+                  >
+                    {adjustingClosing ? '...' : 'Salvar'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
 

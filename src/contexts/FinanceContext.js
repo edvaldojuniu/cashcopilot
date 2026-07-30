@@ -15,6 +15,8 @@ import {
   calculateMonthlySummary,
   getBalanceAtMonthStart,
 } from '@/lib/engine';
+import { resolveCardClosing, addMonths } from '@/lib/recurrence';
+import { formatDateStr } from '@/lib/utils';
 import QuickAddModal from '@/components/QuickAddModal/QuickAddModal';
 
 const FinanceContext = createContext({});
@@ -493,9 +495,19 @@ export function FinanceProvider({ children }) {
   // Corrige o fechamento de um cartão pra um mês específico (fechamento real
   // não é fixo todo mês — varia por fim de semana/feriado/decisão do banco).
   // Upsert: grava imediatamente ao ser chamada, mesmo padrão do addTag no
-  // TagPicker — não espera o formulário inteiro salvar.
+  // TagPicker — não espera o formulário inteiro salvar. Depois de corrigir,
+  // reatribui automaticamente as compras/pagamentos avulsos que ficaram do
+  // lado errado da nova data — sem isso o usuário teria que abrir cada
+  // lançamento afetado um por um pra mudar de fatura manualmente.
   async function setCardClosing(cartaoId, mesReferencia, dataFechamento) {
     if (!supabase) return { error: 'Not configured' };
+
+    const card = cards.find((c) => c.id === cartaoId);
+    const [year, month] = mesReferencia.split('-').map(Number); // month vem 1-indexado da string
+    const oldClosingStr = card
+      ? formatDateStr(resolveCardClosing(card, cardClosings, year, month - 1).closingDate)
+      : null;
+
     const { data, error } = await supabase
       .from('cartao_fechamentos')
       .upsert(
@@ -512,6 +524,38 @@ export function FinanceProvider({ children }) {
         ? p.map((f) => (f.cartao_id === cartaoId && f.mes_referencia === mesReferencia ? data : f))
         : [...p, data];
     });
+
+    if (card && oldClosingStr && oldClosingStr !== dataFechamento) {
+      const nextMesReferencia = addMonths(`${mesReferencia}-01`, 1).slice(0, 7);
+      // Fechou mais cedo do que se assumia: quem estava entre a nova data e
+      // a antiga passa da fatura deste mês pra do mês seguinte. Fechou mais
+      // tarde: o inverso — quem estava nesse intervalo volta do mês
+      // seguinte pra este.
+      const closesEarlier = dataFechamento < oldClosingStr;
+      const rangeStart = closesEarlier ? dataFechamento : oldClosingStr;
+      const rangeEnd = closesEarlier ? oldClosingStr : dataFechamento;
+      const fromMes = closesEarlier ? mesReferencia : nextMesReferencia;
+      const toMes = closesEarlier ? nextMesReferencia : mesReferencia;
+
+      const { error: reassignError } = await supabase
+        .from('movimentacoes')
+        .update({ fatura_ano_mes: toMes })
+        .eq('usuario_id', user.id)
+        .eq('cartao_id', cartaoId)
+        .eq('frequencia', 'none')
+        .in('tipo', ['card', 'invoice_payment'])
+        .eq('fatura_ano_mes', fromMes)
+        .gte('data_inicio', rangeStart)
+        .lt('data_inicio', rangeEnd);
+
+      if (!reassignError) {
+        // Update em lote pode mexer em várias linhas de uma vez — refetch
+        // silencioso é mais simples e seguro que tentar corrigir cada linha
+        // no estado local uma por uma.
+        fetchAllData({ silent: true });
+      }
+    }
+
     return { data, error: null };
   }
 

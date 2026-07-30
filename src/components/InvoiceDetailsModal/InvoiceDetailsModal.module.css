@@ -185,6 +185,32 @@
   gap: 12px;
 }
 
+.closingRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.closingRow h4 {
+  margin: 0;
+}
+
+.editClosingBtn {
+  background: none;
+  border: none;
+  color: var(--accent-primary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px;
+  white-space: nowrap;
+}
+
+.editClosingBtn:hover {
+  text-decoration: underline;
+}
+
 .dateInput {
   background: var(--bg-input);
   border: 1px solid var(--border-primary);

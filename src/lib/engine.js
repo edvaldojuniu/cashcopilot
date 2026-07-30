@@ -241,6 +241,7 @@ export function generateMonthForecast({
             originalTotal: cardTotal,
             alreadyPaid: alreadyPaid,
             mes_referencia: mesReferencia, // pra InvoiceDetailsModal marcar o pagamento antecipado no mês certo
+            data_fechamento: dateStr, // data de fechamento já resolvida (com correção, se houver) — pra exibir/editar
             type: 'card', // is an invoice
             items: invoiceTransactions // injecting the items!
           });
