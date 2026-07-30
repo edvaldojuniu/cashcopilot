@@ -16,7 +16,7 @@ export default function InvoiceDetailsModal({ isOpen, onClose, invoice }) {
 
   if (!isOpen || !invoice) return null;
 
-  const { description, originalTotal, alreadyPaid, amount, items, card_id } = invoice;
+  const { description, originalTotal, alreadyPaid, amount, items, card_id, mes_referencia } = invoice;
   const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
   const handlePay = async () => {
@@ -37,6 +37,7 @@ export default function InvoiceDetailsModal({ isOpen, onClose, invoice }) {
       descricao: `Pagamento ${description}`,
       valor: amount,
       cartao_id: card_id,
+      fatura_ano_mes: mes_referencia,
       ativo: true,
       ...buildRecurrencePayload({ frequency: 'none', date: payDate }),
     });

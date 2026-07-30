@@ -7,6 +7,7 @@ import BottomNav from '@/components/BottomNav/BottomNav';
 import MonthNavigator from '@/components/MonthNavigator/MonthNavigator';
 import AnalysisChart from '@/components/AnalysisChart/AnalysisChart';
 import GoalsModal from '@/components/GoalsModal/GoalsModal';
+import TagDetailsModal from '@/components/TagDetailsModal/TagDetailsModal';
 import { calculateTagTotals } from '@/lib/engine';
 import { filterLogsByGroup, buildInsights } from '@/lib/analysisInsights';
 import { formatCurrency, formatCyclePeriodLabel, getCycleBounds, formatDateStr } from '@/lib/utils';
@@ -60,6 +61,7 @@ export default function AnalisesPage() {
   const [isGoalsModalOpen, setGoalsModalOpen] = useState(false);
   const [goal, setGoal] = useState(null);
   const [goalVersion, setGoalVersion] = useState(0);
+  const [selectedTag, setSelectedTag] = useState(null);
 
   const cycleStartDay = profile?.dia_inicio_ciclo ?? 1;
   const periodLabel = formatCyclePeriodLabel(viewYear, viewMonth, cycleStartDay);
@@ -166,7 +168,7 @@ export default function AnalisesPage() {
         </div>
 
         <div className="card">
-          <AnalysisChart tagTotals={currentTagTotals} />
+          <AnalysisChart tagTotals={currentTagTotals} onSelectTag={setSelectedTag} />
         </div>
 
         <div className="card">
@@ -211,6 +213,13 @@ export default function AnalisesPage() {
         currentGoal={goal}
         incomeTotal={incomeTotal}
         onSaved={() => setGoalVersion((v) => v + 1)}
+      />
+
+      <TagDetailsModal
+        isOpen={!!selectedTag}
+        onClose={() => setSelectedTag(null)}
+        tag={selectedTag}
+        logs={selectedTag ? currentLogs.filter((l) => (l.tag_ids || []).includes(selectedTag.id)) : []}
       />
 
       <BottomNav />

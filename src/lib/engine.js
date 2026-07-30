@@ -2,15 +2,18 @@
  * Cash Copilot — Motor de Cálculo Financeiro (V2 Pro)
  *
  * Lê a tabela unificada `movimentacoes` (colunas em português: tipo, valor,
- * descricao, frequencia, data_inicio, data_fim, cartao_id, ativo) e devolve
- * objetos por dia com nomes de campo em inglês (description, amount, type,
- * date, balance, totalIncome, ...) — esta é a ÚNICA fronteira de tradução do
- * app; todo o resto da árvore de componentes (DayRow, DayDetailsModal,
- * page.js, totais/page.js, analysisInsights.js) consome o formato de saída
- * em inglês sem saber que o banco está em português.
+ * descricao, frequencia, data_inicio, data_fim, cartao_id, ativo, e
+ * fatura_ano_mes pra compra avulsa/pagamento de cartão) e `cartao_fechamentos`
+ * (correções de fechamento por cartão+mês) e devolve objetos por dia com
+ * nomes de campo em inglês (description, amount, type, date, balance,
+ * totalIncome, ...) — esta é a ÚNICA fronteira de tradução do app; todo o
+ * resto da árvore de componentes (DayRow, DayDetailsModal, page.js,
+ * totais/page.js, analysisInsights.js) consome o formato de saída em inglês
+ * sem saber que o banco está em português.
  */
 
 import { getCycleBounds } from './utils';
+import { resolveCardClosing } from './recurrence';
 
 export function getDaysInMonth(year, month) {
   return new Date(year, month + 1, 0).getDate();
@@ -104,6 +107,7 @@ export function generateMonthForecast({
   movements = [],
   variableExpenses = [],
   cards = [],
+  cardClosings = [],
   verifiedDays = [],
   showDailyForecast = true,
   cycleStartDay = 1,
@@ -148,19 +152,26 @@ export function generateMonthForecast({
     // Faturas de Cartão (Dinâmico)
     const expensesCards = [];
     cards.forEach(c => {
-      // Se a fatura desse cartão fecha neste exato dia...
-      if (c.dia_fechamento === day) {
-        // Entra nesta fatura tudo desde o fechamento anterior (inclusive)
-        // até o dia anterior a este fechamento (inclusive) — ou seja, o
-        // próprio dia de fechamento já abre a fatura seguinte.
-        const closeCurrent = new Date(currYear, currMonth, c.dia_fechamento);
-        const closePrev = new Date(currYear, currMonth - 1, c.dia_fechamento);
+      // Fechamento real de cartão não é fixo todo mês (varia por fim de
+      // semana/feriado/decisão do banco) — resolve a data deste mês
+      // considerando uma eventual correção salva em cardClosings, caindo no
+      // dia padrão do cartão (dia_fechamento) quando não há correção.
+      const { closingDate: closeCurrent, mesReferencia } = resolveCardClosing(c, cardClosings, currYear, currMonth);
 
-        const singleTransactions = movements.filter(m => {
-          if (m.tipo !== 'card' || m.frequencia !== 'none' || m.cartao_id !== c.id) return false;
-          const mDate = new Date(`${m.data_inicio}T12:00:00`); // Fix time
-          return mDate >= closePrev && mDate < closeCurrent;
-        });
+      // Se a fatura desse cartão fecha neste exato dia (já considerando a
+      // correção, se houver)...
+      if (closeCurrent.getTime() === currentLoopDate.getTime()) {
+        const prevMonthRef = new Date(currYear, currMonth - 1, 1);
+        const { closingDate: closePrev } = resolveCardClosing(c, cardClosings, prevMonthRef.getFullYear(), prevMonthRef.getMonth());
+
+        // Compra avulsa: casa pelo mês de fatura escolhido explicitamente no
+        // lançamento (fatura_ano_mes), não por estar dentro de uma janela de
+        // datas — assim ela sempre aponta pra fatura certa mesmo que o
+        // fechamento desse mês seja corrigido depois, e o usuário consegue
+        // mover uma compra pra outra fatura editando-a diretamente.
+        const singleTransactions = movements.filter(m =>
+          m.tipo === 'card' && m.frequencia === 'none' && m.cartao_id === c.id && m.fatura_ano_mes === mesReferencia
+        );
 
         // 2) Procurar parcelamentos e assinaturas ativas para ESTE cartão cuja
         // cobrança cai em ALGUM dia dentro da janela desta fatura — o dia de
@@ -207,13 +218,11 @@ export function generateMonthForecast({
           ...installmentsForThisCard,
         ];
 
-        // Procurar pagamentos antecipados que referenciam ESTE ciclo
-        const earlyPaymentsForThisInvoice = movements.filter(m => {
-          if (m.tipo !== 'invoice_payment' || m.cartao_id !== c.id) return false;
-          const mDate = new Date(`${m.data_inicio}T12:00:00`);
-          // Pagamentos feitos dentro da mesma janela desta fatura abatem ela
-          return mDate >= closePrev && mDate < closeCurrent;
-        });
+        // Procurar pagamentos antecipados que referenciam ESTE ciclo — mesmo
+        // casamento explícito por mês de fatura que a compra avulsa usa.
+        const earlyPaymentsForThisInvoice = movements.filter(m =>
+          m.tipo === 'invoice_payment' && m.cartao_id === c.id && m.fatura_ano_mes === mesReferencia
+        );
 
         const cardTotal = invoiceTransactions.reduce((sum, t) => sum + Number(t.amount), 0);
         const alreadyPaid = earlyPaymentsForThisInvoice.reduce((sum, t) => sum + Number(t.valor), 0);
@@ -227,6 +236,7 @@ export function generateMonthForecast({
             amount: remainingToPay > 0 ? remainingToPay : 0,
             originalTotal: cardTotal,
             alreadyPaid: alreadyPaid,
+            mes_referencia: mesReferencia, // pra InvoiceDetailsModal marcar o pagamento antecipado no mês certo
             type: 'card', // is an invoice
             items: invoiceTransactions // injecting the items!
           });
@@ -428,6 +438,7 @@ export function getBalanceAtMonthStart({
   movements = [],
   variableExpenses = [],
   cards = [],
+  cardClosings = [],
   verifiedDays = [],
   showDailyForecast = true,
   cycleStartDay = 1,
@@ -444,6 +455,7 @@ export function getBalanceAtMonthStart({
       movements,
       variableExpenses,
       cards,
+      cardClosings,
       verifiedDays,
       showDailyForecast,
       cycleStartDay,

@@ -6,7 +6,7 @@ import { formatCurrency } from '@/lib/utils';
 // Gráfico de barras horizontais por tag. A cor de cada barra é a própria
 // cor da tag (já escolhida pelo usuário) — identidade segue a entidade, não
 // um ciclo de cores genérico. Já vem ordenado por calculateTagTotals (desc).
-export default function AnalysisChart({ tagTotals }) {
+export default function AnalysisChart({ tagTotals, onSelectTag }) {
   if (!tagTotals || tagTotals.length === 0) {
     return <div className={styles.empty}>Nenhum gasto com tag neste período.</div>;
   }
@@ -16,7 +16,11 @@ export default function AnalysisChart({ tagTotals }) {
   return (
     <div className={styles.chart}>
       {tagTotals.map((tag) => (
-        <div key={tag.id} className={styles.row}>
+        <div
+          key={tag.id}
+          className={`${styles.row} ${onSelectTag ? styles.rowClickable : ''}`}
+          onClick={onSelectTag ? () => onSelectTag(tag) : undefined}
+        >
           <div className={styles.rowHeader}>
             <span className={styles.dot} style={{ background: tag.cor }} />
             <span className={styles.name}>{tag.nome}</span>

@@ -4,10 +4,11 @@ import { useState, useEffect, useRef } from 'react';
 import styles from './QuickAddModal.module.css';
 import { useFinance } from '@/contexts/FinanceContext';
 import TagPicker from '@/components/TagPicker/TagPicker';
+import FaturaPicker from '@/components/FaturaPicker/FaturaPicker';
 import QuantityStepper from './QuantityStepper';
 import RecurrenceScopeModal from '@/components/RecurrenceScopeModal/RecurrenceScopeModal';
 import { useBackButtonClose } from '@/hooks/useBackButtonClose';
-import { buildRecurrencePayload, diffMonths, diffDays, addDays } from '@/lib/recurrence';
+import { buildRecurrencePayload, diffMonths, diffDays, addDays, resolveCardClosing } from '@/lib/recurrence';
 import { formatCurrency } from '@/lib/utils';
 
 const FULL_FREQUENCY_OPTIONS = [
@@ -43,7 +44,7 @@ function toDbType(uiType) {
 }
 
 export default function QuickAddModal({ isOpen, onClose, initialType = 'diario', editData = null, defaultDate = null }) {
-  const { addMovement, updateMovement, deleteMovement, addMovementException, cards } = useFinance();
+  const { addMovement, updateMovement, deleteMovement, addMovementException, cards, cardClosings } = useFinance();
 
   useBackButtonClose(isOpen, onClose);
 
@@ -53,6 +54,7 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
   const [date, setDate] = useState(defaultDate || new Date().toISOString().split('T')[0]);
 
   const [cardId, setCardId] = useState('');
+  const [faturaAnoMes, setFaturaAnoMes] = useState('');
   const [tagIds, setTagIds] = useState([]);
 
   const [frequency, setFrequency] = useState('none'); // none, monthly, weekly, daily, installment
@@ -93,6 +95,7 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
           setFrequency('none');
           setEndMode('infinite');
           setCount(2);
+          setFaturaAnoMes(editType === 'card' ? (editData.fatura_ano_mes || '') : '');
         } else {
           const freq = editData.frequencia || 'none';
           const effectiveStartDate = editData.date || editData.data_inicio;
@@ -101,6 +104,9 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
 
           setDate(effectiveStartDate || new Date().toISOString().split('T')[0]);
           setFrequency(freq);
+          // Parcela/assinatura recorrente não escolhe fatura individual —
+          // segue a janela automaticamente.
+          setFaturaAnoMes('');
 
           if (freq === 'installment') {
             const n = effectiveStartDate && endDate ? diffMonths(effectiveStartDate, endDate) + 1 : 2;
@@ -131,6 +137,7 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
         setEndMode('infinite');
         setCount(2);
         setTagIds([]);
+        setFaturaAnoMes('');
         if (cards.length > 0) setCardId(cards[0].id);
       }
       // O componente fica montado mesmo fechado (só retorna null), então
@@ -163,6 +170,20 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
   function isRecurringEdit() {
     return !!editData && editData.frequencia !== 'none';
   }
+
+  // Fatura (mês de fechamento) desta compra de cartão: usa a que o usuário
+  // escolheu explicitamente no FaturaPicker, ou — se ele ainda não escolheu
+  // (ou o caminho nem mostra o seletor, como "somente esta" virando avulso a
+  // partir de uma recorrente) — resolve um padrão sensato a partir da data e
+  // do fechamento conhecido do cartão. Sempre computada quando type==='card',
+  // pra nenhuma compra de cartão ficar sem fatura nenhuma.
+  const selectedCard = cards.find(c => c.id === cardId);
+  const effectiveFaturaAnoMes = type === 'card' && selectedCard && date
+    ? (faturaAnoMes || (() => {
+        const [y, m] = date.split('-').map(Number);
+        return resolveCardClosing(selectedCard, cardClosings, y, m - 1).mesReferencia;
+      })())
+    : '';
 
   // "Somente esta": marca a ocorrência original como exceção (some da série)
   // e cria uma movimentação avulsa (frequencia 'none') só nessa data, já com
@@ -205,7 +226,7 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
     const isEdit = !!editData;
     const finalAmount = frequency === 'installment' ? val / count : val;
     const isOneOffCard = type === 'card' && frequency === 'none';
-    const cardName = cards.find(c => c.id === cardId)?.nome || 'Cartão';
+    const cardName = selectedCard?.nome || 'Cartão';
     // Compra avulsa de cartão ganha o nome do cartão embutido na descrição
     // (mesma convenção de sempre); fatura recorrente/parcelada não.
     const finalDescription = isOneOffCard ? `${description} (${cardName})` : description;
@@ -215,6 +236,7 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
       descricao: finalDescription,
       valor: finalAmount,
       cartao_id: type === 'card' ? cardId : null,
+      fatura_ano_mes: type === 'card' ? effectiveFaturaAnoMes : null,
       ativo: true,
       tagIds,
     };
@@ -363,6 +385,18 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
               <select value={cardId} onChange={e => setCardId(e.target.value)} required>
                 {cards.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
               </select>
+            </div>
+          )}
+
+          {type === 'card' && frequency === 'none' && cardId && (
+            <div className={styles.formGroup}>
+              <label>Fatura</label>
+              <FaturaPicker
+                cardId={cardId}
+                value={effectiveFaturaAnoMes}
+                onChange={setFaturaAnoMes}
+                referenceDate={date}
+              />
             </div>
           )}
 

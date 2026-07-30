@@ -28,12 +28,13 @@ function resolveTagIds(tagNames, tags) {
  * (WhatsApp/Telegram) sem duplicar lógica.
  */
 export function buildAssistantTools({ supabaseUser, userId, financeData, profile }) {
-  const { movements, variableExpenses, cards, verifiedDays, tags } = financeData;
+  const { movements, variableExpenses, cards, cardClosings, verifiedDays, tags } = financeData;
 
   const baseForecastParams = {
     movements,
     variableExpenses,
     cards,
+    cardClosings,
     verifiedDays,
     showDailyForecast: profile.mostrar_previsao_diaria !== false,
     cycleStartDay: profile.dia_inicio_ciclo ?? 1,

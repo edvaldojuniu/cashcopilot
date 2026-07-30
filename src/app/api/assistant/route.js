@@ -42,6 +42,10 @@ async function fetchFinanceData(supabaseUser, userId) {
     // Exceções numa query própria — mesmo motivo do FinanceContext no
     // client: nunca embutir esse join na query-mãe.
     supabaseUser.from('movimentacao_excecoes').select('movimentacao_id, data_excecao').eq('usuario_id', userId),
+    // Correções de fechamento de fatura por cartão+mês — sem isso, o
+    // assistente calcularia faturas com o dia padrão do cartão mesmo quando
+    // o usuário já corrigiu o fechamento real daquele mês.
+    supabaseUser.from('cartao_fechamentos').select('*').eq('usuario_id', userId),
   ]);
 
   const extract = (i) => {
@@ -75,6 +79,7 @@ async function fetchFinanceData(supabaseUser, userId) {
     cards: extract(2),
     verifiedDays: extract(3),
     tags: extract(4),
+    cardClosings: extract(6),
   };
 }
 

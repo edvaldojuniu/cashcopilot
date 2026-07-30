@@ -1,9 +1,10 @@
 /**
  * Cash Copilot — Helpers de recorrência
  *
- * Operam em strings "YYYY-MM-DD" (mesmo formato do <input type="date">),
- * independentes de engine.js — usados pelo QuickAddModal para montar o
- * payload de start_date/end_date/frequency a partir das escolhas do usuário.
+ * Operam em strings "YYYY-MM-DD" (mesmo formato do <input type="date">).
+ * Puros, sem I/O — usados pelo QuickAddModal (montar o payload de
+ * frequencia/data_inicio/data_fim) e por engine.js/FaturaPicker
+ * (resolveCardClosing).
  */
 
 function parseDate(dateStr) {
@@ -71,4 +72,50 @@ export function buildRecurrencePayload({ frequency, endMode, count, date }) {
   else endDate = addDays(date, count - 1); // daily
 
   return { frequencia: frequency, data_inicio: date, data_fim: endDate };
+}
+
+/**
+ * Formata (ano, mês 0-indexado) como "YYYY-MM" — a chave usada tanto em
+ * `cartao_fechamentos.mes_referencia` quanto em `movimentacoes.fatura_ano_mes`.
+ */
+export function formatMesReferencia(year, month) {
+  return `${year}-${String(month + 1).padStart(2, '0')}`;
+}
+
+/**
+ * Resolve o fechamento de fatura de um cartão pra um mês específico: usa a
+ * correção salva em `cardClosings` pra esse (cartão, mês) se existir, senão
+ * cai no dia padrão do cartão (`cartoes.dia_fechamento`). Fechamento real de
+ * cartão não é fixo todo mês (varia por fim de semana, feriado, decisão do
+ * banco) — é por isso que essa correção existe, em vez de só usar sempre o
+ * dia padrão. Único lugar com essa lógica — usado tanto por engine.js (pra
+ * casar lançamentos) quanto pelo FaturaPicker (pra sugerir opções).
+ */
+export function resolveCardClosing(card, cardClosings, year, month) {
+  const mesReferencia = formatMesReferencia(year, month);
+  const override = cardClosings.find(
+    (f) => f.cartao_id === card.id && f.mes_referencia === mesReferencia
+  );
+  const closingDate = override
+    ? parseDate(override.data_fechamento)
+    : new Date(year, month, card.dia_fechamento);
+  return { closingDate, mesReferencia, isOverride: !!override };
+}
+
+/**
+ * Lista as faturas de um cartão perto de uma data de referência (a data do
+ * lançamento no formulário) — `before`/`after` meses pra trás/frente,
+ * resolvidas via `resolveCardClosing`, em ordem cronológica. Usado pelo
+ * FaturaPicker pra montar as opções do combo.
+ */
+export function nearbyCardClosings(card, cardClosings, referenceDateStr, before = 2, after = 3) {
+  const ref = parseDate(referenceDateStr);
+  const options = [];
+  for (let i = -before; i <= after; i++) {
+    const totalMonths = ref.getMonth() + i;
+    const year = ref.getFullYear() + Math.floor(totalMonths / 12);
+    const month = ((totalMonths % 12) + 12) % 12;
+    options.push(resolveCardClosing(card, cardClosings, year, month));
+  }
+  return options;
 }

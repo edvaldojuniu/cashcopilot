@@ -58,6 +58,7 @@ export function FinanceProvider({ children }) {
   const [movements, setMovements] = useState([]);
   const [variableExpenses, setVariableExpenses] = useState([]);
   const [cards, setCards] = useState([]);
+  const [cardClosings, setCardClosings] = useState([]);
   const [verifiedDays, setVerifiedDays] = useState([]);
   const [tags, setTags] = useState([]);
 
@@ -83,6 +84,7 @@ export function FinanceProvider({ children }) {
     setMovements(data.movements ?? []);
     setVariableExpenses(data.variableExpenses ?? []);
     setCards(data.cards ?? []);
+    setCardClosings(data.cardClosings ?? []);
     setVerifiedDays(data.verifiedDays ?? []);
     setTags(data.tags ?? []);
   }
@@ -91,6 +93,7 @@ export function FinanceProvider({ children }) {
     setMovements([]);
     setVariableExpenses([]);
     setCards([]);
+    setCardClosings([]);
     setVerifiedDays([]);
     setTags([]);
     setLoading(false);
@@ -141,6 +144,10 @@ export function FinanceProvider({ children }) {
             .eq('usuario_id', user.id)
             .order('nome'),
           supabase
+            .from('cartao_fechamentos')
+            .select('*')
+            .eq('usuario_id', user.id),
+          supabase
             .from('dias_verificados')
             .select('*')
             .eq('usuario_id', user.id),
@@ -188,11 +195,12 @@ export function FinanceProvider({ children }) {
         };
 
         const freshData = {
-          movements: withExceptions(withFlatTagIds(extract(0)), extract(5)),
+          movements: withExceptions(withFlatTagIds(extract(0)), extract(6)),
           variableExpenses: extract(1),
           cards: extract(2),
-          verifiedDays: extract(3),
-          tags: extract(4),
+          cardClosings: extract(3),
+          verifiedDays: extract(4),
+          tags: extract(5),
         };
 
         // Safety guard: if every query came back empty it almost certainly
@@ -200,11 +208,12 @@ export function FinanceProvider({ children }) {
         // race on page refresh).  Don't overwrite good cached data with an
         // empty result — just silently discard it and let the cache stand.
         // This is safe because a genuine "user has zero records" state is
-        // extremely unlikely across all five tables simultaneously.
+        // extremely unlikely across all six tables simultaneously.
         const totalRecords =
           freshData.movements.length +
           freshData.variableExpenses.length +
           freshData.cards.length +
+          freshData.cardClosings.length +
           freshData.verifiedDays.length +
           freshData.tags.length;
 
@@ -317,10 +326,11 @@ export function FinanceProvider({ children }) {
       movements,
       variableExpenses,
       cards,
+      cardClosings,
       verifiedDays,
       tags,
     });
-  }, [movements, variableExpenses, cards, verifiedDays, tags]);
+  }, [movements, variableExpenses, cards, cardClosings, verifiedDays, tags]);
 
   // ─── CRUD — Movimentações ───────────────────────────────────────────────────
 
@@ -480,6 +490,31 @@ export function FinanceProvider({ children }) {
     return { error };
   }
 
+  // Corrige o fechamento de um cartão pra um mês específico (fechamento real
+  // não é fixo todo mês — varia por fim de semana/feriado/decisão do banco).
+  // Upsert: grava imediatamente ao ser chamada, mesmo padrão do addTag no
+  // TagPicker — não espera o formulário inteiro salvar.
+  async function setCardClosing(cartaoId, mesReferencia, dataFechamento) {
+    if (!supabase) return { error: 'Not configured' };
+    const { data, error } = await supabase
+      .from('cartao_fechamentos')
+      .upsert(
+        { cartao_id: cartaoId, mes_referencia: mesReferencia, data_fechamento: dataFechamento, usuario_id: user.id },
+        { onConflict: 'cartao_id,mes_referencia' }
+      )
+      .select()
+      .single();
+    if (error) return { data, error };
+
+    setCardClosings((p) => {
+      const exists = p.some((f) => f.cartao_id === cartaoId && f.mes_referencia === mesReferencia);
+      return exists
+        ? p.map((f) => (f.cartao_id === cartaoId && f.mes_referencia === mesReferencia ? data : f))
+        : [...p, data];
+    });
+    return { data, error: null };
+  }
+
   async function toggleVerifiedDay(dateStr) {
     if (!supabase) return { error: 'Not configured' };
     const existing = verifiedDays.find((d) => d.data === dateStr);
@@ -558,6 +593,7 @@ export function FinanceProvider({ children }) {
         movements,
         variableExpenses,
         cards,
+        cardClosings,
         verifiedDays,
         showDailyForecast: profile.mostrar_previsao_diaria !== false,
         cycleStartDay: profile.dia_inicio_ciclo ?? 1,
@@ -569,13 +605,14 @@ export function FinanceProvider({ children }) {
         movements,
         variableExpenses,
         cards,
+        cardClosings,
         verifiedDays,
         showDailyForecast: profile.mostrar_previsao_diaria !== false,
         cycleStartDay: profile.dia_inicio_ciclo ?? 1,
       });
       return { forecast, summary: calculateMonthlySummary(forecast), initialBalance: balance };
     },
-    [profile, movements, variableExpenses, cards, verifiedDays]
+    [profile, movements, variableExpenses, cards, cardClosings, verifiedDays]
   );
 
   const getMultiMonthForecastFn = useCallback(
@@ -590,6 +627,7 @@ export function FinanceProvider({ children }) {
         movements,
         variableExpenses,
         cards,
+        cardClosings,
         verifiedDays,
         showDailyForecast: profile.mostrar_previsao_diaria !== false,
         cycleStartDay: profile.dia_inicio_ciclo ?? 1,
@@ -604,6 +642,7 @@ export function FinanceProvider({ children }) {
           movements,
           variableExpenses,
           cards,
+          cardClosings,
           verifiedDays,
           showDailyForecast: profile.mostrar_previsao_diaria !== false,
           cycleStartDay: profile.dia_inicio_ciclo ?? 1,
@@ -619,7 +658,7 @@ export function FinanceProvider({ children }) {
         return result;
       });
     },
-    [profile, movements, variableExpenses, cards, verifiedDays]
+    [profile, movements, variableExpenses, cards, cardClosings, verifiedDays]
   );
 
   // ─── Navigation ───────────────────────────────────────────────────────────
@@ -728,6 +767,7 @@ export function FinanceProvider({ children }) {
     movements,
     variableExpenses,
     cards,
+    cardClosings,
     verifiedDays,
     tags,
     loading,
@@ -741,6 +781,7 @@ export function FinanceProvider({ children }) {
     addCard,
     updateCard,
     deleteCard,
+    setCardClosing,
     toggleVerifiedDay,
     addTag,
     updateTag,
