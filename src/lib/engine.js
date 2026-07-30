@@ -214,7 +214,11 @@ export function generateMonthForecast({
         });
 
         const invoiceTransactions = [
-          ...singleTransactions.map(m => toOccurrence(m, 'card', dateStr)),
+          // Data da própria compra (não o dia de fechamento da fatura) —
+          // era usado dateStr do dia externo do loop aqui, que é sempre o
+          // dia de fechamento, fazendo todo item avulso da fatura mostrar a
+          // mesma data errada no detalhamento.
+          ...singleTransactions.map(m => toOccurrence(m, 'card', m.data_inicio)),
           ...installmentsForThisCard,
         ];
 
