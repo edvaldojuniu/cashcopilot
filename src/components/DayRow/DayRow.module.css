@@ -43,6 +43,7 @@
   font-variant-numeric: tabular-nums;
   min-width: 24px;
   text-align: center;
+  white-space: nowrap;
 }
 
 .check {

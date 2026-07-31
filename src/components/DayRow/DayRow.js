@@ -3,8 +3,12 @@
 import styles from './DayRow.module.css';
 import { formatCurrency, getBalanceRowBg } from '@/lib/utils';
 
-export default function DayRow({ data, maxBalance, filter, onToggleVerify }) {
-  const { day, isPast, isToday, isFuture, isVerified, totalIncome, totalExpense, totalCard, totalFixed, dailyAmount, totalSavings = 0, balance, totalDailyCard = 0 } = data;
+export default function DayRow({ data, maxBalance, filter, showFullDate, onToggleVerify }) {
+  const { day, date, isPast, isToday, isFuture, isVerified, totalIncome, totalExpense, totalCard, totalFixed, dailyAmount, totalSavings = 0, balance, totalDailyCard = 0 } = data;
+
+  const dayLabel = showFullDate
+    ? `${String(day).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`
+    : day;
 
   const displayItems = [];
   const fullCardAmount = totalCard + totalDailyCard;
@@ -68,7 +72,7 @@ export default function DayRow({ data, maxBalance, filter, onToggleVerify }) {
           onClick={onToggleVerify ? (e) => { e.stopPropagation(); onToggleVerify(); } : undefined}
           style={{ cursor: onToggleVerify ? 'pointer' : 'default' }}
         >
-          <span className={styles.dayNumber}>{day}</span>
+          <span className={styles.dayNumber}>{dayLabel}</span>
           {isVerified && (
             <svg className={styles.check} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-income)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="20 6 9 17 4 12" />

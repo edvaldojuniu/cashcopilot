@@ -152,6 +152,13 @@ export default function HomePage() {
                   {mData.forecast.map((dayData, dayIndex) => {
                     const enhancedDayData = { ...dayData, onOpenInvoiceDetails: setSelectedInvoice };
                     const isFirstDay = index === 0 && dayIndex === 0;
+                    // Mostra "dd/mm" no primeiro dia da coluna e sempre que o
+                    // mês muda de um dia pro outro — o resto continua só com
+                    // o número, que já é suficiente quando o mês é óbvio
+                    // pelo contexto (ciclo atravessa virada de mês quando
+                    // cycleStartDay != 1, então "1" sozinho é ambíguo sem isso).
+                    const prevDay = dayIndex > 0 ? mData.forecast[dayIndex - 1] : null;
+                    const showFullDate = dayIndex === 0 || (prevDay && prevDay.date.getMonth() !== dayData.date.getMonth());
                     return (
                       <div
                         key={dayData.dateStr || dayData.day}
@@ -162,6 +169,7 @@ export default function HomePage() {
                             data={enhancedDayData}
                             maxBalance={maxBalance}
                             filter={filter}
+                            showFullDate={showFullDate}
                             onToggleVerify={() => toggleVerifiedDay(dayData.dateStr)}
                           />
                         </div>
