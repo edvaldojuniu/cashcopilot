@@ -119,3 +119,26 @@ export function nearbyCardClosings(card, cardClosings, referenceDateStr, before 
   }
   return options;
 }
+
+/**
+ * Confere se uma correção de fechamento faz sentido: a data digitada deve
+ * cair dentro do mês de `mesReferencia`, com uma folga de poucos dias pra
+ * cada lado (um fechamento real pode legitimamente escorregar um ou dois
+ * dias pro mês adjacente, ex: fechar dia 1 do mês seguinte). Uma data bem no
+ * meio de outro mês (não só na borda) é sinal de erro de digitação — ex: mês
+ * errado no seletor de data. Sem essa checagem, essa correção faz a fatura
+ * daquele mês nunca mais bater com nenhum dia do calendário e sumir da tela.
+ * IMPORTANTE: a folga é em DIAS a partir da borda do mês, não em "meses de
+ * distância" — meses vizinhos (ex: junho e julho) sempre têm distância 1,
+ * então checar só a diferença de mês deixaria passar uma data bem no meio do
+ * mês errado.
+ */
+export function isReasonableClosingDate(mesReferencia, dataFechamentoStr, bufferDays = 5) {
+  const [y, m] = mesReferencia.split('-').map(Number); // m vem 1-indexado
+  const monthStart = new Date(y, m - 1, 1);
+  const monthEnd = new Date(y, m, 0); // último dia do mês
+  const entered = parseDate(dataFechamentoStr);
+  const bufferMs = bufferDays * 24 * 60 * 60 * 1000;
+  return entered.getTime() >= monthStart.getTime() - bufferMs
+    && entered.getTime() <= monthEnd.getTime() + bufferMs;
+}

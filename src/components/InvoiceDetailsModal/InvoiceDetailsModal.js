@@ -5,7 +5,7 @@ import styles from './InvoiceDetailsModal.module.css';
 import { formatCurrency } from '@/lib/utils';
 import { useFinance } from '@/contexts/FinanceContext';
 import { useBackButtonClose } from '@/hooks/useBackButtonClose';
-import { buildRecurrencePayload } from '@/lib/recurrence';
+import { buildRecurrencePayload, isReasonableClosingDate } from '@/lib/recurrence';
 
 export default function InvoiceDetailsModal({ isOpen, onClose, invoice }) {
   const [payDate, setPayDate] = useState('');
@@ -30,6 +30,16 @@ export default function InvoiceDetailsModal({ isOpen, onClose, invoice }) {
 
   const handleAdjustClosing = async () => {
     if (!newClosingDate) return;
+    // Essa fatura é sempre do mês de mes_referencia — se a data digitada cai
+    // bem longe desse mês, é sinal de erro de digitação (ex: mês errado no
+    // seletor). Sem essa checagem, a fatura desse mês nunca mais bateria com
+    // nenhum dia do calendário e sumiria da tela sem aviso nenhum.
+    if (!isReasonableClosingDate(mes_referencia, newClosingDate)) {
+      const proceed = confirm(
+        `A data que você digitou está bem longe do mês desta fatura. Tem certeza que quer usar essa data mesmo assim? Se não tiver certeza, cancele e confira o mês/dia digitado.`
+      );
+      if (!proceed) return;
+    }
     setAdjustingClosing(true);
     const { error } = await setCardClosing(card_id, mes_referencia, newClosingDate);
     setAdjustingClosing(false);
