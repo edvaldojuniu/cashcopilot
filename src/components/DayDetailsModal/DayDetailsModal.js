@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { useBackButtonClose } from '@/hooks/useBackButtonClose';
 
 export default function DayDetailsModal({ isOpen, onClose, dayData, initialType = 'diario' }) {
+  const { cards } = useFinance();
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
 
@@ -22,6 +23,16 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
     setEditingItem({ ...item, type: forcedType || item.type });
   }
 
+  // Nome do cartão sempre buscado fresco por cartao_id, nunca mexendo na
+  // descrição em si — ela já pode carregar o sufixo "(N/M)"/"(assinatura)"
+  // vindo do engine.js pra parcela/assinatura recorrente, e tentar
+  // strip+reanexar o nome do cartão ali confundiria os dois sufixos. Mostra
+  // o cartão junto do tipo (ex: "Assinatura/Recorrente · Nubank") em vez
+  // disso — funciona igual pra avulsa e recorrente, sem string parsing.
+  function cardName(txn) {
+    return cards.find((c) => c.id === txn.cartao_id)?.nome;
+  }
+
   const { dateStr, day, incomes, expenses, transactions, recurringDaily = [], recurringSavings = [] } = dayData;
 
   // Separate components for easier rendering
@@ -30,10 +41,11 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
   const cardTxns = transactions.filter(t => t.type === 'card'); // compras avulsas no cartão neste dia
   const dailyTxns = transactions.filter(t => t.type === 'daily');
   const savingTxns = transactions.filter(t => t.type === 'saving');
+  const invoicePayments = transactions.filter(t => t.type === 'invoice_payment');
 
   const isEmpty = incomes.length === 0 && fixedExpenses.length === 0 && cardExpenses.length === 0
     && cardTxns.length === 0 && dailyTxns.length === 0 && savingTxns.length === 0
-    && recurringDaily.length === 0 && recurringSavings.length === 0;
+    && recurringDaily.length === 0 && recurringSavings.length === 0 && invoicePayments.length === 0;
 
   const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
   const dateObj = new Date(dateStr + "T12:00:00");
@@ -147,11 +159,33 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
                   </div>
                 )}
 
+                {invoicePayments.length > 0 && (
+                  <div className={styles.group}>
+                    <div className={styles.groupTitle}>Pagamento de Fatura</div>
+                    <div className={styles.itemList}>
+                      {invoicePayments.map((pay, i) => (
+                        <div key={`pay-${i}`} className={styles.item}>
+                          <div className={styles.itemInfo}>
+                            <span className={styles.itemDesc}>{pay.description}</span>
+                            <span className={styles.itemType}>Saiu da conta</span>
+                          </div>
+                          <span className={`${styles.itemAmount} ${styles.amountCard}`}>
+                            {formatCurrency(pay.amount)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {cardTxns.length > 0 && (
                   <div className={styles.group}>
                     <div className={styles.groupTitle}>Compras no Cartão (Neste dia)</div>
                     <div className={styles.itemList}>
-                      {cardTxns.map((txn, i) => (
+                      {cardTxns.map((txn, i) => {
+                        const typeLabel = txn.frequencia === 'none' ? 'Compra Avulsa' : 'Assinatura/Recorrente';
+                        const card = cardName(txn);
+                        return (
                         <div
                           key={`crd-txn-${i}`}
                           className={`${styles.item} ${styles.itemClickable}`}
@@ -159,13 +193,14 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
                         >
                           <div className={styles.itemInfo}>
                             <span className={styles.itemDesc}>{txn.description}</span>
-                            <span className={styles.itemType}>{txn.frequencia === 'none' ? 'Compra Avulsa' : 'Assinatura/Recorrente'}</span>
+                            <span className={styles.itemType}>{card ? `${typeLabel} · ${card}` : typeLabel}</span>
                           </div>
                           <span className={`${styles.itemAmount} ${styles.amountCard}`}>
                             {formatCurrency(txn.amount)}
                           </span>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}

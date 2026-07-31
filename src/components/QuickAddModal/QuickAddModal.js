@@ -8,7 +8,7 @@ import FaturaPicker from '@/components/FaturaPicker/FaturaPicker';
 import QuantityStepper from './QuantityStepper';
 import RecurrenceScopeModal from '@/components/RecurrenceScopeModal/RecurrenceScopeModal';
 import { useBackButtonClose } from '@/hooks/useBackButtonClose';
-import { buildRecurrencePayload, diffMonths, diffDays, addDays, resolveCardClosing } from '@/lib/recurrence';
+import { buildRecurrencePayload, diffMonths, diffDays, addDays, resolveDefaultFatura } from '@/lib/recurrence';
 import { formatCurrency } from '@/lib/utils';
 
 const FULL_FREQUENCY_OPTIONS = [
@@ -179,10 +179,7 @@ export default function QuickAddModal({ isOpen, onClose, initialType = 'diario',
   // pra nenhuma compra de cartão ficar sem fatura nenhuma.
   const selectedCard = cards.find(c => c.id === cardId);
   const effectiveFaturaAnoMes = type === 'card' && selectedCard && date
-    ? (faturaAnoMes || (() => {
-        const [y, m] = date.split('-').map(Number);
-        return resolveCardClosing(selectedCard, cardClosings, y, m - 1).mesReferencia;
-      })())
+    ? (faturaAnoMes || resolveDefaultFatura(selectedCard, cardClosings, date))
     : '';
 
   // "Somente esta": marca a ocorrência original como exceção (some da série)

@@ -97,6 +97,25 @@ function toOccurrence(m, type, dateStr) {
   return { ...m, description: m.descricao, amount: Number(m.valor), type, date: dateStr };
 }
 
+// Descrição de uma ocorrência de cartão com o sufixo "(N/M)" (parcelado ou
+// mensal com repetições contadas) ou "(assinatura)" (recorrente sem fim) —
+// avulsa (frequencia 'none') não leva sufixo nenhum. Único lugar com essa
+// lógica — usado tanto pra montar os itens da fatura agregada quanto pra
+// ocorrência avulsa mostrada no detalhamento do dia, que antes divergiam
+// (a fatura numerava, o detalhamento do dia não).
+function describeCardOccurrence(m, occurrenceDate) {
+  if (m.frequencia === 'none') return m.descricao || 'Compra';
+
+  const description = m.descricao || 'Parcelamento/Assinatura';
+  if (!m.data_fim) return `${description} (assinatura)`;
+
+  const start = toLocalMidnight(m.data_inicio);
+  const end = toLocalMidnight(m.data_fim);
+  const totalInstallments = monthsBetweenDates(start, end) + 1;
+  const currentInstallment = monthsBetweenDates(start, occurrenceDate) + 1;
+  return `${description} (${currentInstallment}/${totalInstallments})`;
+}
+
 /**
  * Motor central de cálculo do ciclo
  */
@@ -189,22 +208,9 @@ export function generateMonthForecast({
           }
           if (!chargeDate) return;
 
-          let description = cb.descricao || `Parcelamento/Assinatura`;
-          // Tem fim definido (mensal com repetições contadas, ou parcelado)
-          // → numera a parcela atual "(N/M)". Recorrente sem fim → "(assinatura)".
-          if (cb.data_fim) {
-            const start = toLocalMidnight(cb.data_inicio);
-            const end = toLocalMidnight(cb.data_fim);
-            const totalInstallments = monthsBetweenDates(start, end) + 1;
-            const currentInstallment = monthsBetweenDates(start, chargeDate) + 1;
-            description = `${description} (${currentInstallment}/${totalInstallments})`;
-          } else {
-            description = `${description} (assinatura)`;
-          }
-
           installmentsForThisCard.push({
             ...cb,
-            description,
+            description: describeCardOccurrence(cb, chargeDate),
             amount: Number(cb.valor),
             type: 'card_installment',
             // Dia real da cobrança (não o dia de fechamento) — pra exibir
@@ -268,8 +274,18 @@ export function generateMonthForecast({
     // uma compra avulsa já tinha.
     const cardTxnsReal = movements
       .filter(m => m.tipo === 'card' && matchesRecurrence(m, currentLoopDate))
-      .map(m => toOccurrence(m, 'card', dateStr));
+      .map(m => ({ ...toOccurrence(m, 'card', dateStr), description: describeCardOccurrence(m, currentLoopDate) }));
     const totalRealCardDaily = cardTxnsReal.reduce((sum, t) => sum + Number(t.amount), 0);
+
+    // Pagamentos antecipados de fatura (registrados via InvoiceDetailsModal)
+    // — precisam descontar do saldo no dia em que o pagamento de verdade
+    // aconteceu. Sem isso, o valor só reduzia o quanto aparecia na fatura no
+    // dia do fechamento (via alreadyPaid) mas nunca era descontado em lugar
+    // nenhum do saldo — o dinheiro simplesmente sumia da conta.
+    const invoicePaymentsReal = movements
+      .filter(m => m.tipo === 'invoice_payment' && matchesRecurrence(m, currentLoopDate))
+      .map(m => toOccurrence(m, 'invoice_payment', dateStr));
+    const totalInvoicePayments = invoicePaymentsReal.reduce((sum, t) => sum + Number(t.amount), 0);
 
     // Economias (Retiradas para investimento) avulsas
     const savingTxns = movements
@@ -303,12 +319,12 @@ export function generateMonthForecast({
     }
     dailyValue += totalRecurringDaily;
 
-    balance = balance + totalIncome - totalExpense - dailyValue - totalSavingsAll;
+    balance = balance + totalIncome - totalExpense - dailyValue - totalSavingsAll - totalInvoicePayments;
 
     // União dos avulsos deste dia exato (usada por DayDetailsModal, que
     // re-filtra por .type internamente) — equivalente ao antigo
     // `transactions.filter(t => t.date === dateStr)`.
-    const dayTransactions = [...dailyTxnsReal, ...cardTxnsReal, ...savingTxns];
+    const dayTransactions = [...dailyTxnsReal, ...cardTxnsReal, ...savingTxns, ...invoicePaymentsReal];
 
     days.push({
       day,
@@ -329,6 +345,7 @@ export function generateMonthForecast({
       dailyBudget: dailyAmountBudget, // A meta pura (apenas para ui)
       totalRealDaily,             // Total que gastou no dia de verdade no dinheiro/débito
       totalSavings: totalSavingsAll,
+      totalInvoicePayments,        // Pagamentos antecipados de fatura descontados neste dia
       recurringDaily,             // Ocorrências de templates recorrentes de diário neste dia
       recurringSavings,           // Ocorrências de templates recorrentes de economia neste dia
       balance: Math.round(balance * 100) / 100,
@@ -374,8 +391,14 @@ export function calculateMonthlySummary(forecast) {
     // Transactions (Daily + Card + Savings) — bug pré-existente: compras de
     // cartão dentro de `transactions` caíam todas em "daily" por não terem
     // um branch próprio aqui, sumindo da aba/categoria "Cartão" em Totais e
-    // Análises mesmo aparecendo certo na célula do dia.
-    d.transactions.forEach(t => logs.push({ ...t, logDate: d.dateStr, group: t.type === 'saving' ? 'saving' : t.type === 'card' ? 'card' : 'daily' }));
+    // Análises mesmo aparecendo certo na célula do dia. Pagamento de fatura
+    // (invoice_payment) fica de fora dos logs: é só o registro de QUANDO o
+    // dinheiro saiu da conta pra pagar o cartão (já descontado do saldo),
+    // não uma categoria de gasto — a compra em si já é contada aqui como
+    // "card" no dia em que foi feita; contar o pagamento também duplicaria.
+    d.transactions
+      .filter(t => t.type !== 'invoice_payment')
+      .forEach(t => logs.push({ ...t, logDate: d.dateStr, group: t.type === 'saving' ? 'saving' : t.type === 'card' ? 'card' : 'daily' }));
     // Diário/Economia recorrentes (templates)
     d.recurringDaily.forEach(e => logs.push({ ...e, logDate: d.dateStr, group: 'daily' }));
     d.recurringSavings.forEach(e => logs.push({ ...e, logDate: d.dateStr, group: 'saving' }));

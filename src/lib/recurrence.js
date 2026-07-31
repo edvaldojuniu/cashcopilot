@@ -142,3 +142,25 @@ export function isReasonableClosingDate(mesReferencia, dataFechamentoStr, buffer
   return entered.getTime() >= monthStart.getTime() - bufferMs
     && entered.getTime() <= monthEnd.getTime() + bufferMs;
 }
+
+/**
+ * Sugere a fatura padrão pra uma compra feita em `dateStr`: a PRÓXIMA fatura
+ * que ainda vai fechar depois dessa data — nunca uma que já fechou. Ex:
+ * cartão fechou dia 21/06, compra feita dia 22/06 → sugere a fatura de
+ * julho (a aberta), não a de junho (que já fechou antes da compra). Resolver
+ * só "o mês calendário da data" não é suficiente: se o fechamento daquele
+ * mês já passou, a fatura certa é sempre a seguinte.
+ */
+export function resolveDefaultFatura(card, cardClosings, dateStr) {
+  const entered = parseDate(dateStr);
+  let year = entered.getFullYear();
+  let month = entered.getMonth(); // 0-indexado
+  for (let i = 0; i < 3; i++) {
+    const { closingDate, mesReferencia } = resolveCardClosing(card, cardClosings, year, month);
+    if (closingDate > entered) return mesReferencia;
+    month += 1;
+    if (month > 11) { month = 0; year += 1; }
+  }
+  // Não deveria chegar aqui — fallback pro mês calendário da própria compra.
+  return formatMesReferencia(entered.getFullYear(), entered.getMonth());
+}
