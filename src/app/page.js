@@ -85,6 +85,18 @@ export default function HomePage() {
     }
   }, [viewMonth, viewYear, maxMonths]);
 
+  // O clique em "Hoje" chama goToCurrentMonth(), mas se o período visível já
+  // é o de hoje, viewMonth/viewYear não mudam de valor — o React não
+  // re-renderiza, e o useEffect acima (que depende deles) nunca dispara a
+  // rolagem. Por isso, além de goToCurrentMonth(), rola direto aqui quando o
+  // ref já existe (ou seja, hoje já está renderizado no período atual).
+  function handleGoToToday() {
+    goToCurrentMonth();
+    if (todayRef.current) {
+      todayRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
   // Loading state
   if (authLoading) {
     return (
@@ -115,7 +127,7 @@ export default function HomePage() {
         year={viewYear}
         onPrev={goToPrevMonth}
         onNext={goToNextMonth}
-        onToday={goToCurrentMonth}
+        onToday={handleGoToToday}
         label={formatCyclePeriodLabel(viewYear, viewMonth, cycleStartDay)}
       />
 
