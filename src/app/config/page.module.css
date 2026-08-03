@@ -4,6 +4,13 @@
   padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + var(--space-lg));
 }
 
+/* Reserva espaço pro menu lateral fixo no desktop (ver BottomNav.module.css) */
+@media (min-width: 1024px) {
+  .page {
+    padding-left: var(--sidebar-width);
+  }
+}
+
 .header {
   padding: var(--space-lg) var(--space-md) var(--space-md);
 }

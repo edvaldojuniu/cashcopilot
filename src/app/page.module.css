@@ -118,6 +118,8 @@
     flex-direction: column;
     overflow: hidden;
     padding-bottom: 0;
+    /* Reserva espaço pro menu lateral fixo (ver BottomNav.module.css) */
+    padding-left: var(--sidebar-width);
   }
 
   /*
@@ -173,10 +175,14 @@
     background: var(--text-tertiary);
   }
 
-  /* Each month card — fixed width, clips vertical overflow into columnBody */
+  /* Each month card — fixed width, clips vertical overflow into columnBody.
+     Largura maior que antes (era 300px) porque a tabela densa mostra 6
+     colunas de valor (entradas/saídas/diários/economias/cartão/saldo) ao
+     mesmo tempo, em vez de uma só — precisa de espaço pra caber valores
+     grandes tipo "R$ 12.345,67" sem quebrar linha. */
   .monthColumn {
-    flex: 0 0 300px;
-    max-width: 300px;
+    flex: 0 0 640px;
+    max-width: 640px;
     height: 100%;
     display: flex;
     flex-direction: column;
@@ -185,6 +191,36 @@
     border: 1px solid var(--border-primary);
     border-radius: var(--radius-lg);
     overflow: hidden;
+  }
+
+  /* Cabeçalho de colunas da tabela densa — mesmo grid do DayRow (dense),
+     fora do columnBody pra ficar sempre visível, sem rolar junto dos dias. */
+  .denseHeaderRow {
+    flex-shrink: 0;
+    background: var(--bg-surface-hover);
+  }
+
+  .denseHeaderLabel {
+    font-size: 0.6875rem;
+    font-weight: var(--font-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-tertiary);
+  }
+
+  /* Rodapé de totais do mês — mesmo grid, soma cada coluna do período (saldo
+     não é somado, é o saldo do último dia — ver computeMonthTotals). */
+  .denseFooterRow {
+    flex-shrink: 0;
+    background: var(--bg-surface-hover);
+    border-top: 2px solid var(--border-primary);
+    border-bottom: none;
+  }
+
+  .denseFooterLabel {
+    font-size: var(--text-sm);
+    font-weight: var(--font-bold);
+    color: var(--text-primary);
   }
 
   /* Sticky month title inside each card */

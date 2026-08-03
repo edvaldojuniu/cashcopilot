@@ -17,6 +17,45 @@
   filter: brightness(1.05);
 }
 
+/* Tabela densa (desktop): dia | entradas | saídas | diários | economias |
+   cartão | saldo, todos sempre visíveis — usada tanto pelas linhas de dia
+   quanto pela linha de cabeçalho/rodapé de cada mês (page.js reaproveita
+   estas mesmas classes pra manter as colunas alinhadas). */
+.denseRow {
+  grid-template-columns: 52px repeat(5, minmax(80px, 1fr)) minmax(104px, auto);
+}
+
+.denseCell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 5px var(--space-sm);
+  border-right: 1px solid var(--border-secondary);
+}
+
+.denseValue {
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  white-space: nowrap;
+}
+
+.denseIncome {
+  color: var(--color-income);
+}
+
+.denseExpense {
+  color: var(--color-expense);
+}
+
+.denseDaily {
+  color: var(--color-daily);
+}
+
+.denseCard {
+  color: var(--color-card);
+}
+
 .today {
   background: var(--day-today) !important;
   border-left: 3px solid var(--accent-primary);

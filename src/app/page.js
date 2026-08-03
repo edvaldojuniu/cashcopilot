@@ -10,8 +10,24 @@ import FilterSelector from '@/components/FilterSelector/FilterSelector';
 import DayRow from '@/components/DayRow/DayRow';
 import DayDetailsModal from '@/components/DayDetailsModal/DayDetailsModal';
 import InvoiceDetailsModal from '@/components/InvoiceDetailsModal/InvoiceDetailsModal';
-import { formatCyclePeriodLabel, filterToTransactionType } from '@/lib/utils';
+import { formatCyclePeriodLabel, filterToTransactionType, formatCurrency } from '@/lib/utils';
 import styles from './page.module.css';
+import dayRowStyles from '@/components/DayRow/DayRow.module.css';
+
+// Soma as colunas da tabela densa (desktop) pro rodapé de cada mês. Saldo não
+// é somado (não faz sentido somar um saldo corrente dia a dia) — fica o
+// saldo do último dia do período, sobrescrito a cada iteração do reduce.
+function computeMonthTotals(forecast) {
+  return forecast.reduce((acc, d) => {
+    acc.income += d.totalIncome;
+    acc.expense += d.totalFixed;
+    acc.daily += d.dailyAmount;
+    acc.savings += d.totalSavings || 0;
+    acc.card += d.totalCard + (d.totalDailyCard || 0);
+    acc.balance = d.balance;
+    return acc;
+  }, { income: 0, expense: 0, daily: 0, savings: 0, card: 0, balance: 0 });
+}
 
 export default function HomePage() {
   const { isAuthenticated, loading: authLoading, profile } = useAuth();
@@ -131,7 +147,12 @@ export default function HomePage() {
         label={formatCyclePeriodLabel(viewYear, viewMonth, cycleStartDay)}
       />
 
-      <FilterSelector value={filter} onChange={setFilter} performance={summary.performance} />
+      {/* No desktop a tabela densa já mostra todas as categorias ao mesmo
+          tempo (uma coluna por tipo) — o filtro de categoria só faz sentido
+          no mobile, onde só cabe uma coluna de valor por vez. */}
+      {maxMonths <= 1 && (
+        <FilterSelector value={filter} onChange={setFilter} performance={summary.performance} />
+      )}
 
       <div className={styles.dayList} id="day-list">
         {financeLoading ? (
@@ -153,44 +174,71 @@ export default function HomePage() {
           </div>
         ) : (
           <div className={styles.monthColumns}>
-            {monthsData.map((mData, index) => (
-              <div key={`${mData.year}-${mData.month}`} className={styles.monthColumn}>
-                {maxMonths > 1 && (
-                  <div className={styles.monthHeader}>
-                    {formatCyclePeriodLabel(mData.year, mData.month, cycleStartDay)}
-                  </div>
-                )}
-                <div className={styles.columnBody}>
-                  {mData.forecast.map((dayData, dayIndex) => {
-                    const enhancedDayData = { ...dayData, onOpenInvoiceDetails: setSelectedInvoice };
-                    const isFirstDay = index === 0 && dayIndex === 0;
-                    // Mostra "dd/mm" no primeiro dia da coluna e sempre que o
-                    // mês muda de um dia pro outro — o resto continua só com
-                    // o número, que já é suficiente quando o mês é óbvio
-                    // pelo contexto (ciclo atravessa virada de mês quando
-                    // cycleStartDay != 1, então "1" sozinho é ambíguo sem isso).
-                    const prevDay = dayIndex > 0 ? mData.forecast[dayIndex - 1] : null;
-                    const showFullDate = dayIndex === 0 || (prevDay && prevDay.date.getMonth() !== dayData.date.getMonth());
-                    return (
-                      <div
-                        key={dayData.dateStr || dayData.day}
-                        ref={dayData.isToday && index === 0 ? todayRef : isFirstDay ? firstDayRef : null}
-                      >
-                        <div onClick={() => setSelectedDay(dayData.dateStr)}>
-                          <DayRow
-                            data={enhancedDayData}
-                            maxBalance={maxBalance}
-                            filter={filter}
-                            showFullDate={showFullDate}
-                            onToggleVerify={() => toggleVerifiedDay(dayData.dateStr)}
-                          />
+            {monthsData.map((mData, index) => {
+              const dense = maxMonths > 1;
+              const monthTotals = dense ? computeMonthTotals(mData.forecast) : null;
+              return (
+                <div key={`${mData.year}-${mData.month}`} className={styles.monthColumn}>
+                  {dense && (
+                    <div className={styles.monthHeader}>
+                      {formatCyclePeriodLabel(mData.year, mData.month, cycleStartDay)}
+                    </div>
+                  )}
+                  {dense && (
+                    <div className={`${dayRowStyles.row} ${dayRowStyles.denseRow} ${styles.denseHeaderRow}`}>
+                      <div className={dayRowStyles.dayCell}><span className={styles.denseHeaderLabel}>Dia</span></div>
+                      <div className={dayRowStyles.denseCell}><span className={styles.denseHeaderLabel}>Entradas</span></div>
+                      <div className={dayRowStyles.denseCell}><span className={styles.denseHeaderLabel}>Saídas</span></div>
+                      <div className={dayRowStyles.denseCell}><span className={styles.denseHeaderLabel}>Diários</span></div>
+                      <div className={dayRowStyles.denseCell}><span className={styles.denseHeaderLabel}>Economias</span></div>
+                      <div className={dayRowStyles.denseCell}><span className={styles.denseHeaderLabel}>Cartão</span></div>
+                      <div className={dayRowStyles.balanceCell}><span className={styles.denseHeaderLabel}>Saldo</span></div>
+                    </div>
+                  )}
+                  <div className={styles.columnBody}>
+                    {mData.forecast.map((dayData, dayIndex) => {
+                      const enhancedDayData = { ...dayData, onOpenInvoiceDetails: setSelectedInvoice };
+                      const isFirstDay = index === 0 && dayIndex === 0;
+                      // Mostra "dd/mm" no primeiro dia da coluna e sempre que o
+                      // mês muda de um dia pro outro — o resto continua só com
+                      // o número, que já é suficiente quando o mês é óbvio
+                      // pelo contexto (ciclo atravessa virada de mês quando
+                      // cycleStartDay != 1, então "1" sozinho é ambíguo sem isso).
+                      const prevDay = dayIndex > 0 ? mData.forecast[dayIndex - 1] : null;
+                      const showFullDate = dayIndex === 0 || (prevDay && prevDay.date.getMonth() !== dayData.date.getMonth());
+                      return (
+                        <div
+                          key={dayData.dateStr || dayData.day}
+                          ref={dayData.isToday && index === 0 ? todayRef : isFirstDay ? firstDayRef : null}
+                        >
+                          <div onClick={() => setSelectedDay(dayData.dateStr)}>
+                            <DayRow
+                              data={enhancedDayData}
+                              maxBalance={maxBalance}
+                              filter={filter}
+                              showFullDate={showFullDate}
+                              dense={dense}
+                              onToggleVerify={() => toggleVerifiedDay(dayData.dateStr)}
+                            />
+                          </div>
                         </div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
+                  </div>
+                  {dense && monthTotals && (
+                    <div className={`${dayRowStyles.row} ${dayRowStyles.denseRow} ${styles.denseFooterRow}`}>
+                      <div className={dayRowStyles.dayCell}><span className={styles.denseFooterLabel}>Total</span></div>
+                      <div className={dayRowStyles.denseCell}><span className={`${dayRowStyles.denseValue} ${dayRowStyles.denseIncome}`}>{formatCurrency(monthTotals.income)}</span></div>
+                      <div className={dayRowStyles.denseCell}><span className={`${dayRowStyles.denseValue} ${dayRowStyles.denseExpense}`}>{formatCurrency(monthTotals.expense)}</span></div>
+                      <div className={dayRowStyles.denseCell}><span className={`${dayRowStyles.denseValue} ${dayRowStyles.denseDaily}`}>{formatCurrency(monthTotals.daily)}</span></div>
+                      <div className={dayRowStyles.denseCell}><span className={`${dayRowStyles.denseValue} ${dayRowStyles.denseIncome}`}>{formatCurrency(monthTotals.savings)}</span></div>
+                      <div className={dayRowStyles.denseCell}><span className={`${dayRowStyles.denseValue} ${dayRowStyles.denseCard}`}>{formatCurrency(monthTotals.card)}</span></div>
+                      <div className={dayRowStyles.balanceCell}><span className={dayRowStyles.balance}>{formatCurrency(monthTotals.balance)}</span></div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

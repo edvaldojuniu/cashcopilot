@@ -3,7 +3,7 @@
 import styles from './DayRow.module.css';
 import { formatCurrency, getBalanceRowBg } from '@/lib/utils';
 
-export default function DayRow({ data, maxBalance, filter, showFullDate, onToggleVerify }) {
+export default function DayRow({ data, maxBalance, filter, showFullDate, dense, onToggleVerify }) {
   const { day, date, isPast, isToday, isFuture, isVerified, totalIncome, totalExpense, totalCard, totalFixed, dailyAmount, totalSavings = 0, balance, totalDailyCard = 0 } = data;
 
   const dayLabel = showFullDate
@@ -53,6 +53,7 @@ export default function DayRow({ data, maxBalance, filter, showFullDate, onToggl
 
   const rowClasses = [
     styles.row,
+    dense ? styles.denseRow : '',
     isToday ? styles.today : '',
     isPast ? styles.past : '',
     isFuture ? styles.future : '',
@@ -80,19 +81,41 @@ export default function DayRow({ data, maxBalance, filter, showFullDate, onToggl
           )}
         </div>
 
-        {/* Type + Value */}
-        <div className={styles.typeCell}>
-          <div className={styles.typeCellContainer}>
-            {displayItems.map((item, idx) => (
-              <div key={idx} className={styles.typeCellItem}>
-                {item.icon}
-                <span className={`${styles.value} ${item.value === 0 ? styles.zero : ''} ${isFuture && !isToday ? styles.forecast : ''}`}>
-                  {formatCurrency(item.value)}
-                </span>
-              </div>
-            ))}
+        {/* Type + Value — no desktop (dense) mostra todas as categorias em
+            colunas fixas de uma vez, em vez de uma coluna que troca conforme
+            o filtro selecionado (comportamento do mobile). */}
+        {dense ? (
+          <>
+            <div className={styles.denseCell}>
+              <span className={`${styles.denseValue} ${styles.denseIncome}`}>{formatCurrency(totalIncome)}</span>
+            </div>
+            <div className={styles.denseCell}>
+              <span className={`${styles.denseValue} ${styles.denseExpense}`}>{formatCurrency(totalFixed)}</span>
+            </div>
+            <div className={styles.denseCell}>
+              <span className={`${styles.denseValue} ${styles.denseDaily}`}>{formatCurrency(dailyAmount)}</span>
+            </div>
+            <div className={styles.denseCell}>
+              <span className={`${styles.denseValue} ${styles.denseIncome}`}>{formatCurrency(totalSavings)}</span>
+            </div>
+            <div className={styles.denseCell}>
+              <span className={`${styles.denseValue} ${styles.denseCard}`}>{formatCurrency(fullCardAmount)}</span>
+            </div>
+          </>
+        ) : (
+          <div className={styles.typeCell}>
+            <div className={styles.typeCellContainer}>
+              {displayItems.map((item, idx) => (
+                <div key={idx} className={styles.typeCellItem}>
+                  {item.icon}
+                  <span className={`${styles.value} ${item.value === 0 ? styles.zero : ''} ${isFuture && !isToday ? styles.forecast : ''}`}>
+                    {formatCurrency(item.value)}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Balance */}
         <div 

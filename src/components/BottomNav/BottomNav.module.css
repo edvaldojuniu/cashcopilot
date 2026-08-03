@@ -90,3 +90,49 @@
   align-items: center;
   justify-content: center;
 }
+
+/* ── Desktop: barra vira menu lateral fixo à esquerda ──
+   Mesmos itens/ações do mobile (nada de navegação novo) — só reposiciona a
+   mesma barra de baixo pra esquerda, igual ao layout de referência do
+   usuário. Aplica em todas as páginas que renderizam <BottomNav>, já que é
+   um componente compartilhado (Saldos, Totais, Config, Análises). */
+@media (min-width: 1024px) {
+  .nav {
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: auto;
+    width: var(--sidebar-width);
+    border-top: none;
+    border-right: 1px solid var(--glass-border);
+    padding-bottom: 0;
+  }
+
+  .inner {
+    flex-direction: column;
+    justify-content: flex-start;
+    max-width: none;
+    height: 100%;
+    width: 100%;
+    padding: var(--space-lg) 0;
+    gap: var(--space-lg);
+  }
+
+  .item {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .addButton {
+    transform: none;
+    margin: var(--space-xs) 0;
+  }
+
+  .addButton:hover {
+    transform: scale(1.05);
+  }
+
+  .addButton:active {
+    transform: scale(0.95);
+  }
+}

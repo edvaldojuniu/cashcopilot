@@ -103,8 +103,9 @@ img {
   --z-toast: 400;
   --z-nav: 500;
 
-  /* Bottom nav height */
+  /* Bottom nav height (mobile) / left sidebar width (desktop, ≥1024px) */
   --nav-height: 72px;
+  --sidebar-width: 88px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 
   /* Saldo colors (both themes) */
