@@ -28,7 +28,7 @@
 .denseCell {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   padding: 5px var(--space-sm);
   border-right: 1px solid var(--border-secondary);
   cursor: pointer;
@@ -40,11 +40,16 @@
 
 /* Valor sempre em preto/texto padrão — a cor por categoria fica só na
    bolinha antes do valor, no mesmo espírito dos ícones circulares coloridos
-   já usados no mobile (.typeIcon), em vez de colorir o texto inteiro. */
+   já usados no mobile (.typeIcon), em vez de colorir o texto inteiro.
+   width: 100% + space-between mantém a bolinha sempre grudada na borda
+   esquerda da célula (coluna reta) e o valor grudado na direita, não
+   importa o tamanho do número. */
 .denseItem {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
+  width: 100%;
 }
 
 .denseDot {
