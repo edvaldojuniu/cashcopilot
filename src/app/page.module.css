@@ -137,8 +137,9 @@
     flex: 1;
     min-height: 0;
     overflow: hidden;
-    /* space for the horizontal scrollbar + gap above the BottomNav */
-    padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 16px);
+    /* O menu agora é lateral (não fica mais embaixo) — só sobra espaço pra
+       barra de rolagem horizontal + respiro, sem reservar --nav-height. */
+    padding-bottom: 16px;
   }
 
   /* Outer container: scrolls HORIZONTALLY between month cards */
@@ -243,7 +244,7 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 4px);
+    padding-bottom: 4px;
     scrollbar-width: thin;
   }
 

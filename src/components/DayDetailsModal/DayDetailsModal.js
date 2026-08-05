@@ -7,7 +7,7 @@ import QuickAddModal from '../QuickAddModal/QuickAddModal';
 import { useState } from 'react';
 import { useBackButtonClose } from '@/hooks/useBackButtonClose';
 
-export default function DayDetailsModal({ isOpen, onClose, dayData, initialType = 'diario' }) {
+export default function DayDetailsModal({ isOpen, onClose, dayData, initialType = 'diario', sectionFilter = null }) {
   const { cards } = useFinance();
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
@@ -43,9 +43,17 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
   const savingTxns = transactions.filter(t => t.type === 'saving');
   const invoicePayments = transactions.filter(t => t.type === 'invoice_payment');
 
-  const isEmpty = incomes.length === 0 && fixedExpenses.length === 0 && cardExpenses.length === 0
-    && cardTxns.length === 0 && dailyTxns.length === 0 && savingTxns.length === 0
-    && recurringDaily.length === 0 && recurringSavings.length === 0 && invoicePayments.length === 0;
+  // Clicar numa coluna específica da tabela densa (desktop) abre só a seção
+  // daquele tipo — sectionFilter null (clique genérico no dia) mostra tudo,
+  // igual sempre foi.
+  const groupVisible = (type) => !sectionFilter || sectionFilter === type;
+
+  const isEmpty =
+    (!groupVisible('income') || incomes.length === 0)
+    && (!groupVisible('expense') || fixedExpenses.length === 0)
+    && (!groupVisible('card') || (cardExpenses.length === 0 && invoicePayments.length === 0 && cardTxns.length === 0))
+    && (!groupVisible('diario') || (dailyTxns.length === 0 && recurringDaily.length === 0))
+    && (!groupVisible('saving') || (savingTxns.length === 0 && recurringSavings.length === 0));
 
   const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
   const dateObj = new Date(dateStr + "T12:00:00");
@@ -71,7 +79,7 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
               </div>
             ) : (
               <>
-                {incomes.length > 0 && (
+                {groupVisible('income') && incomes.length > 0 && (
                   <div className={styles.group}>
                     <div className={styles.groupTitle}>Entradas</div>
                     <div className={styles.itemList}>
@@ -94,7 +102,7 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
                   </div>
                 )}
 
-                {savingTxns.length > 0 && (
+                {groupVisible('saving') && savingTxns.length > 0 && (
                   <div className={styles.group}>
                     <div className={styles.groupTitle}>Economias (Investimentos)</div>
                     <div className={styles.itemList}>
@@ -117,7 +125,7 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
                   </div>
                 )}
 
-                {fixedExpenses.length > 0 && (
+                {groupVisible('expense') && fixedExpenses.length > 0 && (
                   <div className={styles.group}>
                     <div className={styles.groupTitle}>Saídas Fixas</div>
                     <div className={styles.itemList}>
@@ -140,7 +148,7 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
                   </div>
                 )}
 
-                {cardExpenses.length > 0 && (
+                {groupVisible('card') && cardExpenses.length > 0 && (
                   <div className={styles.group}>
                     <div className={styles.groupTitle}>Fechamento de Faturas (Cartão)</div>
                     <div className={styles.itemList}>
@@ -159,7 +167,7 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
                   </div>
                 )}
 
-                {invoicePayments.length > 0 && (
+                {groupVisible('card') && invoicePayments.length > 0 && (
                   <div className={styles.group}>
                     <div className={styles.groupTitle}>Pagamento de Fatura</div>
                     <div className={styles.itemList}>
@@ -178,7 +186,7 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
                   </div>
                 )}
 
-                {cardTxns.length > 0 && (
+                {groupVisible('card') && cardTxns.length > 0 && (
                   <div className={styles.group}>
                     <div className={styles.groupTitle}>Compras no Cartão (Neste dia)</div>
                     <div className={styles.itemList}>
@@ -205,7 +213,7 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
                   </div>
                 )}
 
-                {dailyTxns.length > 0 && (
+                {groupVisible('diario') && dailyTxns.length > 0 && (
                   <div className={styles.group}>
                     <div className={styles.groupTitle}>Gastos Diários (Dinheiro/Débito)</div>
                     <div className={styles.itemList}>
@@ -227,7 +235,7 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
                     </div>
                   </div>
                 )}
-                {recurringDaily.length > 0 && (
+                {groupVisible('diario') && recurringDaily.length > 0 && (
                   <div className={styles.group}>
                     <div className={styles.groupTitle}>Gastos Diários Recorrentes</div>
                     <div className={styles.itemList}>
@@ -250,7 +258,7 @@ export default function DayDetailsModal({ isOpen, onClose, dayData, initialType 
                   </div>
                 )}
 
-                {recurringSavings.length > 0 && (
+                {groupVisible('saving') && recurringSavings.length > 0 && (
                   <div className={styles.group}>
                     <div className={styles.groupTitle}>Economias Recorrentes</div>
                     <div className={styles.itemList}>

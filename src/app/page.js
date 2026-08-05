@@ -39,6 +39,11 @@ export default function HomePage() {
 
   const [filter, setFilter] = useState('diarios');
   const [selectedDay, setSelectedDay] = useState(null);
+  // Tipo da coluna clicada na tabela densa (desktop) — null quando o dia foi
+  // aberto de forma genérica (clique no número do dia/saldo). Controla tanto
+  // qual seção o DayDetailsModal mostra quanto o tipo default do formulário
+  // de "adicionar" aberto a partir dali.
+  const [selectedDayType, setSelectedDayType] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const todayRef = useRef(null);
   const firstDayRef = useRef(null);
@@ -211,7 +216,7 @@ export default function HomePage() {
                           key={dayData.dateStr || dayData.day}
                           ref={dayData.isToday && index === 0 ? todayRef : isFirstDay ? firstDayRef : null}
                         >
-                          <div onClick={() => setSelectedDay(dayData.dateStr)}>
+                          <div onClick={() => { setSelectedDay(dayData.dateStr); setSelectedDayType(null); }}>
                             <DayRow
                               data={enhancedDayData}
                               maxBalance={maxBalance}
@@ -219,6 +224,7 @@ export default function HomePage() {
                               showFullDate={showFullDate}
                               dense={dense}
                               onToggleVerify={() => toggleVerifiedDay(dayData.dateStr)}
+                              onSelectType={(type) => { setSelectedDay(dayData.dateStr); setSelectedDayType(type); }}
                             />
                           </div>
                         </div>
@@ -228,11 +234,36 @@ export default function HomePage() {
                   {dense && monthTotals && (
                     <div className={`${dayRowStyles.row} ${dayRowStyles.denseRow} ${styles.denseFooterRow}`}>
                       <div className={dayRowStyles.dayCell}><span className={styles.denseFooterLabel}>Total</span></div>
-                      <div className={dayRowStyles.denseCell}><span className={`${dayRowStyles.denseValue} ${dayRowStyles.denseIncome}`}>{formatCurrency(monthTotals.income)}</span></div>
-                      <div className={dayRowStyles.denseCell}><span className={`${dayRowStyles.denseValue} ${dayRowStyles.denseExpense}`}>{formatCurrency(monthTotals.expense)}</span></div>
-                      <div className={dayRowStyles.denseCell}><span className={`${dayRowStyles.denseValue} ${dayRowStyles.denseDaily}`}>{formatCurrency(monthTotals.daily)}</span></div>
-                      <div className={dayRowStyles.denseCell}><span className={`${dayRowStyles.denseValue} ${dayRowStyles.denseIncome}`}>{formatCurrency(monthTotals.savings)}</span></div>
-                      <div className={dayRowStyles.denseCell}><span className={`${dayRowStyles.denseValue} ${dayRowStyles.denseCard}`}>{formatCurrency(monthTotals.card)}</span></div>
+                      <div className={dayRowStyles.denseCell}>
+                        <span className={dayRowStyles.denseItem}>
+                          <span className={dayRowStyles.denseDot} style={{ background: 'var(--color-income)' }} />
+                          <span className={styles.denseFooterLabel}>{formatCurrency(monthTotals.income)}</span>
+                        </span>
+                      </div>
+                      <div className={dayRowStyles.denseCell}>
+                        <span className={dayRowStyles.denseItem}>
+                          <span className={dayRowStyles.denseDot} style={{ background: 'var(--color-expense)' }} />
+                          <span className={styles.denseFooterLabel}>{formatCurrency(monthTotals.expense)}</span>
+                        </span>
+                      </div>
+                      <div className={dayRowStyles.denseCell}>
+                        <span className={dayRowStyles.denseItem}>
+                          <span className={dayRowStyles.denseDot} style={{ background: 'var(--color-daily)' }} />
+                          <span className={styles.denseFooterLabel}>{formatCurrency(monthTotals.daily)}</span>
+                        </span>
+                      </div>
+                      <div className={dayRowStyles.denseCell}>
+                        <span className={dayRowStyles.denseItem}>
+                          <span className={dayRowStyles.denseDot} style={{ background: 'var(--color-income)' }} />
+                          <span className={styles.denseFooterLabel}>{formatCurrency(monthTotals.savings)}</span>
+                        </span>
+                      </div>
+                      <div className={dayRowStyles.denseCell}>
+                        <span className={dayRowStyles.denseItem}>
+                          <span className={dayRowStyles.denseDot} style={{ background: 'var(--color-card)' }} />
+                          <span className={styles.denseFooterLabel}>{formatCurrency(monthTotals.card)}</span>
+                        </span>
+                      </div>
                       <div className={dayRowStyles.balanceCell}><span className={dayRowStyles.balance}>{formatCurrency(monthTotals.balance)}</span></div>
                     </div>
                   )}
@@ -245,9 +276,10 @@ export default function HomePage() {
 
       <DayDetailsModal
         isOpen={!!selectedDay}
-        onClose={() => setSelectedDay(null)}
+        onClose={() => { setSelectedDay(null); setSelectedDayType(null); }}
         dayData={selectedDay ? monthsData.flatMap(m => m.forecast).find(d => d.dateStr === selectedDay) : null}
-        initialType={filterToTransactionType(filter)}
+        initialType={selectedDayType || filterToTransactionType(filter)}
+        sectionFilter={selectedDayType}
       />
 
       <InvoiceDetailsModal

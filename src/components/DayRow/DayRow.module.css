@@ -31,6 +31,27 @@
   justify-content: flex-end;
   padding: 5px var(--space-sm);
   border-right: 1px solid var(--border-secondary);
+  cursor: pointer;
+}
+
+.denseCell:hover {
+  background: var(--bg-surface-hover);
+}
+
+/* Valor sempre em preto/texto padrão — a cor por categoria fica só na
+   bolinha antes do valor, no mesmo espírito dos ícones circulares coloridos
+   já usados no mobile (.typeIcon), em vez de colorir o texto inteiro. */
+.denseItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.denseDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .denseValue {
@@ -38,22 +59,7 @@
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
   white-space: nowrap;
-}
-
-.denseIncome {
-  color: var(--color-income);
-}
-
-.denseExpense {
-  color: var(--color-expense);
-}
-
-.denseDaily {
-  color: var(--color-daily);
-}
-
-.denseCard {
-  color: var(--color-card);
+  color: var(--text-primary);
 }
 
 .today {

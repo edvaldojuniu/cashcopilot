@@ -3,7 +3,7 @@
 import styles from './DayRow.module.css';
 import { formatCurrency, getBalanceRowBg } from '@/lib/utils';
 
-export default function DayRow({ data, maxBalance, filter, showFullDate, dense, onToggleVerify }) {
+export default function DayRow({ data, maxBalance, filter, showFullDate, dense, onToggleVerify, onSelectType }) {
   const { day, date, isPast, isToday, isFuture, isVerified, totalIncome, totalExpense, totalCard, totalFixed, dailyAmount, totalSavings = 0, balance, totalDailyCard = 0 } = data;
 
   const dayLabel = showFullDate
@@ -86,20 +86,35 @@ export default function DayRow({ data, maxBalance, filter, showFullDate, dense, 
             o filtro selecionado (comportamento do mobile). */}
         {dense ? (
           <>
-            <div className={styles.denseCell}>
-              <span className={`${styles.denseValue} ${styles.denseIncome}`}>{formatCurrency(totalIncome)}</span>
+            <div className={styles.denseCell} onClick={(e) => { e.stopPropagation(); onSelectType?.('income'); }}>
+              <span className={styles.denseItem}>
+                <span className={styles.denseDot} style={{ background: 'var(--color-income)' }} />
+                <span className={styles.denseValue}>{formatCurrency(totalIncome)}</span>
+              </span>
             </div>
-            <div className={styles.denseCell}>
-              <span className={`${styles.denseValue} ${styles.denseExpense}`}>{formatCurrency(totalFixed)}</span>
+            <div className={styles.denseCell} onClick={(e) => { e.stopPropagation(); onSelectType?.('expense'); }}>
+              <span className={styles.denseItem}>
+                <span className={styles.denseDot} style={{ background: 'var(--color-expense)' }} />
+                <span className={styles.denseValue}>{formatCurrency(totalFixed)}</span>
+              </span>
             </div>
-            <div className={styles.denseCell}>
-              <span className={`${styles.denseValue} ${styles.denseDaily}`}>{formatCurrency(dailyAmount)}</span>
+            <div className={styles.denseCell} onClick={(e) => { e.stopPropagation(); onSelectType?.('diario'); }}>
+              <span className={styles.denseItem}>
+                <span className={styles.denseDot} style={{ background: 'var(--color-daily)' }} />
+                <span className={styles.denseValue}>{formatCurrency(dailyAmount)}</span>
+              </span>
             </div>
-            <div className={styles.denseCell}>
-              <span className={`${styles.denseValue} ${styles.denseIncome}`}>{formatCurrency(totalSavings)}</span>
+            <div className={styles.denseCell} onClick={(e) => { e.stopPropagation(); onSelectType?.('saving'); }}>
+              <span className={styles.denseItem}>
+                <span className={styles.denseDot} style={{ background: 'var(--color-income)' }} />
+                <span className={styles.denseValue}>{formatCurrency(totalSavings)}</span>
+              </span>
             </div>
-            <div className={styles.denseCell}>
-              <span className={`${styles.denseValue} ${styles.denseCard}`}>{formatCurrency(fullCardAmount)}</span>
+            <div className={styles.denseCell} onClick={(e) => { e.stopPropagation(); onSelectType?.('card'); }}>
+              <span className={styles.denseItem}>
+                <span className={styles.denseDot} style={{ background: 'var(--color-card)' }} />
+                <span className={styles.denseValue}>{formatCurrency(fullCardAmount)}</span>
+              </span>
             </div>
           </>
         ) : (
